@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: two-thirds-demo
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        value: https://two-thirds-demo.onrender.com

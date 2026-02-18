@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <title>Play - The 2/3 Game</title>
+</head>
+<body>
+  <div class="play-page">
+    <div class="play-card">
+      <h1>The 2/3 Game</h1>
+      <p class="play-hint">
+        Pick a number between <strong>0</strong> and <strong>100</strong>.<br>
+        Closest to <strong>2/3 of the average</strong> wins!
+      </p>
+
+      <% if (error) { %>
+        <div class="form-error"><%= error %></div>
+      <% } %>
+
+      <form method="POST" action="/play" id="guess-form">
+        <div class="form-group">
+          <label for="name">Your Name</label>
+          <input type="text" id="name" name="name" required maxlength="100"
+                 placeholder="Enter your name" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="guess">Your Guess (0 &ndash; 100)</label>
+          <input type="number" id="guess" name="guess" min="0" max="100" step="any"
+                 required placeholder="Enter a number" inputmode="decimal" autocomplete="off">
+        </div>
+
+        <button type="submit" class="btn-submit" id="submit-btn">Submit My Guess</button>
+      </form>
+    </div>
+  </div>
+  <script src="/js/play.js"></script>
+</body>
+</html>

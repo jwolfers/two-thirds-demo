@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <title>The 2/3 Game</title>
+</head>
+<body>
+  <div class="lobby">
+    <h1 class="lobby-title">The 2/3 Game</h1>
+    <p class="lobby-subtitle">Can you outsmart the crowd?</p>
+
+    <div class="rules-box">
+      Pick a number from <strong>0 to 100</strong>. The winner is whoever picks closest
+      to <strong>2/3 of the average</strong> of everyone's guesses.<br>
+      <span class="prize">Prize: $50 Amazon Gift Card!</span>
+    </div>
+
+    <div class="qr-container">
+      <img src="<%= qrDataUrl %>" alt="Scan to play">
+    </div>
+    <div class="play-url"><%= playUrl %></div>
+
+    <div class="counter-section">
+      <div class="counter-number" id="submission-count"><%= count %></div>
+      <div class="counter-label">guesses submitted</div>
+    </div>
+
+    <div class="status-indicator" id="status-indicator">
+      <%= gameOpen ? 'Accepting Submissions' : 'Submissions Closed' %>
+    </div>
+
+    <div class="controls">
+      <a href="/results" class="btn btn-maize btn-large">Show Results</a>
+      <button class="btn btn-outline" id="btn-close" onclick="closeSubmissions()">Close Submissions</button>
+      <button class="btn btn-outline" id="btn-open" onclick="openSubmissions()" style="display:none;">Open Submissions</button>
+      <button class="btn btn-danger" onclick="resetGame()">Reset Game</button>
+    </div>
+  </div>
+
+  <script src="/js/instructor.js"></script>
+</body>
+</html>

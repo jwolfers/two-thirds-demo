@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <title>Explain - The 2/3 Game</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+</head>
+<body>
+  <div class="explain-page">
+    <h1>How Should You Think About This?</h1>
+    <p class="explain-intro">
+      The key insight is that your best guess depends on what <em>everyone else</em> guesses.
+      This creates layers of strategic thinking&hellip;
+    </p>
+
+    <h2 class="section-title">Levels of Thinking</h2>
+
+    <div class="k-levels" id="k-levels">
+      <div class="k-card" data-k="0">
+        <div class="k-badge">Level 0</div>
+        <div class="k-body">
+          <div class="k-thought">"I'll just pick a random number&hellip; maybe around 50?"</div>
+          <div class="k-calc">If average is 50 &rarr; target is <span class="target-val">33.3</span></div>
+        </div>
+      </div>
+      <div class="k-card" data-k="1">
+        <div class="k-badge">Level 1</div>
+        <div class="k-body">
+          <div class="k-thought">"If everyone else picks randomly, I should guess 33&hellip;"</div>
+          <div class="k-calc">If average is 33.3 &rarr; target is <span class="target-val">22.2</span></div>
+        </div>
+      </div>
+      <div class="k-card" data-k="2">
+        <div class="k-badge">Level 2</div>
+        <div class="k-body">
+          <div class="k-thought">"But if everyone thinks one step ahead&hellip;"</div>
+          <div class="k-calc">If average is 22.2 &rarr; target is <span class="target-val">14.8</span></div>
+        </div>
+      </div>
+      <div class="k-card" data-k="3">
+        <div class="k-badge">Level 3</div>
+        <div class="k-body">
+          <div class="k-thought">"And if everyone thinks two steps ahead&hellip;"</div>
+          <div class="k-calc">If average is 14.8 &rarr; target is <span class="target-val">9.9</span></div>
+        </div>
+      </div>
+      <div class="k-card" data-k="4">
+        <div class="k-badge">Level 4</div>
+        <div class="k-body">
+          <div class="k-thought">"This rabbit hole keeps going&hellip;"</div>
+          <div class="k-calc">If average is 9.9 &rarr; target is <span class="target-val">6.6</span></div>
+        </div>
+      </div>
+      <div class="k-card" data-k="5">
+        <div class="k-badge">Level 5</div>
+        <div class="k-body">
+          <div class="k-thought">"And deeper still&hellip;"</div>
+          <div class="k-calc">If average is 6.6 &rarr; target is <span class="target-val">4.4</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="section-title">The Pattern: Convergence to Zero</h2>
+    <p class="text-muted mb-2">
+      Each level of thinking multiplies by 2/3. The sequence converges toward zero.
+    </p>
+    <div class="convergence-chart-container">
+      <canvas id="convergence-chart"></canvas>
+    </div>
+
+    <% if (results) { %>
+      <div class="class-result-box">
+        <div class="k-result" id="class-k-level">&mdash;</div>
+        <div class="k-result-label">
+          Your class average was <strong><%= results.average %></strong>.
+          2/3 of that is <strong><%= results.target %></strong>.
+        </div>
+      </div>
+    <% } %>
+
+    <h2 class="section-title">The Nash Equilibrium</h2>
+    <div class="nash-box">
+      <h3>What's the "right" answer?</h3>
+      <p>
+        If everyone reasons through <em>all</em> the levels, the logic converges
+        to a single answer:
+      </p>
+      <div class="nash-answer">0</div>
+      <p>
+        This is the <strong>Nash equilibrium</strong>: if everyone guesses 0,
+        then 2/3 of the average is 0, and no one can do better by changing their
+        guess alone.
+      </p>
+      <p>
+        But in practice, people don't all reason to the same depth &mdash; which is
+        exactly why this game is so revealing. It shows us the distribution of
+        strategic sophistication in the room.
+      </p>
+      <p class="keynesian-note">
+        This game is also called the "Keynesian Beauty Contest" after John Maynard
+        Keynes, who compared investing in the stock market to a newspaper contest
+        where you try to predict which faces <em>others</em> will find most attractive.
+        It's not about what <em>you</em> think &mdash; it's about what you think
+        <em>others</em> think.
+      </p>
+    </div>
+
+    <div class="explain-nav">
+      <a href="/results" class="btn btn-outline">Back to Results</a>
+      <a href="/" class="btn btn-maize">Back to Lobby</a>
+    </div>
+  </div>
+
+  <script>
+    window.RESULTS_DATA = <%= results ? JSON.stringify({ average: results.average, target: results.target }) : 'null' %>;
+  </script>
+  <script src="/js/explain.js"></script>
+</body>
+</html>

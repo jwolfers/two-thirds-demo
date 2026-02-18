@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <%- include('partials/head') %>
+  <title>Results - The 2/3 Game</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
+</head>
+<body>
+  <div class="results-page">
+    <% if (!results) { %>
+      <div class="no-results">
+        <h1>No Guesses Yet</h1>
+        <p>No one has submitted a guess. Go back and collect some entries!</p>
+        <a href="/" class="btn btn-maize">Back to Lobby</a>
+      </div>
+    <% } else { %>
+      <div class="results-header">
+        <h1>Results</h1>
+        <div class="results-count"><%= results.count %> guesses</div>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="histogram"></canvas>
+      </div>
+
+      <div class="stat-cards">
+        <div class="stat-card stat-average">
+          <div class="stat-value"><%= results.average %></div>
+          <div class="stat-label">Average Guess</div>
+        </div>
+        <div class="stat-card stat-target">
+          <div class="stat-value"><%= results.target %></div>
+          <div class="stat-label">2/3 of Average</div>
+        </div>
+        <div class="stat-card stat-winning">
+          <div class="stat-value"><%= results.winners[0] ? results.winners[0].guess : '—' %></div>
+          <div class="stat-label">Winning Guess</div>
+        </div>
+      </div>
+
+      <% if (results.isTie) { %>
+        <div class="tie-section" id="tie-section">
+          <div class="winner-label">It's a Tie!</div>
+          <div class="tie-names">
+            <%= results.winners.map(w => w.name).join(' & ') %>
+          </div>
+          <p class="text-muted">Each guessed <%= results.winners[0].guess %> &mdash; let's break the tie!</p>
+          <button class="btn btn-maize btn-large" onclick="startBracket()">Break the Tie!</button>
+        </div>
+      <% } else { %>
+        <div class="winner-section">
+          <div class="winner-label">Winner</div>
+          <div class="winner-name"><%= results.winners[0] ? results.winners[0].name : '—' %></div>
+          <div class="winner-guess">
+            <% if (results.winners[0]) { %>
+              Guessed <%= results.winners[0].guess %> &mdash; just
+              <%= Math.abs(Math.round((results.winners[0].guess - results.target) * 100) / 100) %>
+              away from the target!
+            <% } %>
+          </div>
+        </div>
+      <% } %>
+
+      <div class="results-actions">
+        <a href="/explain" class="btn btn-maize btn-large">Explain</a>
+        <a href="/" class="btn btn-outline">Back to Lobby</a>
+      </div>
+    <% } %>
+  </div>
+
+  <!-- Bracket overlay (hidden until triggered) -->
+  <div class="bracket-overlay" id="bracket-overlay" style="display:none;"></div>
+
+  <% if (results) { %>
+    <script>
+      window.RESULTS_DATA = <%- JSON.stringify(results) %>;
+    </script>
+    <script src="/js/results.js"></script>
+    <script src="/js/bracket.js"></script>
+  <% } %>
+</body>
+</html>
