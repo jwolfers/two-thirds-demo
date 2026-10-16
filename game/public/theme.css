@@ -1,0 +1,38 @@
+/* Michigan at Western: shared palette and type */
+:root {
+  --um-blue: #00274C;
+  --um-maize: #FFCB05;
+  --wmu-brown: #6C4023;
+  --wmu-gold: #F1C500;
+  --cream: #FBF7EE;
+  --paper: #FFFFFF;
+  --ink: #14202E;
+  --muted: #5B6573;
+  --line: #E3DDCF;
+  --good: #1F8A4C;
+  --bad: #B3261E;
+  --display: 'Oswald', 'Arial Narrow', sans-serif;
+  --body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: var(--body); color: var(--ink); background: var(--cream); -webkit-font-smoothing: antialiased; }
+h1, h2, h3, .display { font-family: var(--display); font-weight: 700; letter-spacing: .01em; text-transform: uppercase; margin: 0; line-height: 1.02; }
+
+/* Lettermarks: original geometric marks, not the official logos */
+.mark { display: inline-block; vertical-align: middle; }
+.mark svg { display: block; width: 100%; height: auto; }
+
+/* The two-school stripe: maize | blue | gold | brown */
+.stripe { height: 10px; background: linear-gradient(90deg, var(--um-maize) 0 25%, var(--um-blue) 25% 50%, var(--wmu-gold) 50% 75%, var(--wmu-brown) 75% 100%); }
+
+.pill { display: inline-flex; align-items: center; gap: .4em; padding: .3em .8em; border-radius: 999px; font-weight: 700; font-size: .85em; letter-spacing: .04em; text-transform: uppercase; }
+.pill.blue { background: var(--um-blue); color: var(--um-maize); }
+.pill.brown { background: var(--wmu-brown); color: var(--wmu-gold); }
+.pill.live::before { content: ''; width: .6em; height: .6em; border-radius: 50%; background: #3BD16F; box-shadow: 0 0 0 0 rgba(59,209,111,.6); animation: pulse 1.6s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(59,209,111,.6); } 70% { box-shadow: 0 0 0 .6em rgba(59,209,111,0); } 100% { box-shadow: 0 0 0 0 rgba(59,209,111,0); } }
+
+.frac { font-family: var(--display); white-space: nowrap; }
+[hidden] { display: none !important; }
