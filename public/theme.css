@@ -1,0 +1,54 @@
+/* Shared palette: Michigan maize & blue, visiting Western Michigan brown & gold. */
+:root {
+  --blue: #00274C;
+  --blue-deep: #00162B;
+  --blue-mid: #0B3A66;
+  --blue-line: rgba(255, 255, 255, 0.10);
+  --maize: #FFCB05;
+  --maize-soft: rgba(255, 203, 5, 0.14);
+  --brown: #6A3E26;
+  --brown-deep: #3E2416;
+  --gold: #F1C500;
+  --cream: #F6F1E4;
+  --ink-2: rgba(246, 241, 228, 0.72);
+  --ink-3: rgba(246, 241, 228, 0.48);
+  --green-sign: #0F6B3E;
+  --red: #FF5A4E;
+  --display: 'Big Shoulders Display', 'Oswald', 'Arial Narrow', sans-serif;
+  --body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--blue-deep);
+  color: var(--cream);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+button { font: inherit; cursor: pointer; }
+
+/* The two-school chip: maize/blue meets brown/gold */
+.schools {
+  display: inline-flex; align-items: stretch; border-radius: 999px; overflow: hidden;
+  font-family: var(--display); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.14);
+}
+.schools span { display: flex; align-items: center; padding: 0.35em 0.8em; }
+.schools .um { background: var(--maize); color: var(--blue); }
+.schools .x { background: var(--cream); color: var(--blue); padding: 0.35em 0.45em; }
+.schools .wmu { background: var(--brown); color: var(--gold); }
+
+/* Stadium stripe used as a decorative band */
+.stripe {
+  height: 10px;
+  background: linear-gradient(90deg,
+    var(--maize) 0 25%, var(--blue-mid) 25% 50%, var(--gold) 50% 75%, var(--brown) 75% 100%);
+}
+
+.grain::after {
+  content: ''; position: fixed; inset: 0; pointer-events: none; opacity: 0.06; z-index: 50;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}

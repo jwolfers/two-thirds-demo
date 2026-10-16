@@ -1,187 +1,243 @@
+// The Two-Thirds Game — a Keynesian beauty contest for a lecture hall.
+// Students:  /          (phones, via QR code)
+// Teacher:   /teacher   (projector; controls need TEACHER_KEY)
+
 const express = require('express');
 const path = require('path');
 const QRCode = require('qrcode');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const TEACHER_KEY = process.env.TEACHER_KEY || 'bronco-blue';
 
-// Trust Render's reverse proxy for correct protocol detection
 app.set('trust proxy', 1);
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json({ limit: '20kb' }));
+app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 
-// --- In-memory game state ---
-const gameState = {
-  guesses: [],   // { name: string, guess: number }
-  gameOpen: true
+// ---------------------------------------------------------------------------
+// In-memory game state (one lecture hall, one game at a time)
+// ---------------------------------------------------------------------------
+// phase: waiting -> open -> closed -> revealed
+const state = {
+  round: 1,
+  phase: 'waiting',
+  entries: new Map(), // clientId -> { name, guess, at }
+  history: [],        // summaries of earlier rounds
+  pick: null          // tie-break winner chosen by the teacher
 };
 
-// --- Compute results ---
+let cache = null;
+function invalidate() { cache = null; }
+
+const round2 = x => Math.round(x * 100) / 100;
+
+// Level-k benchmarks: level 0 averages 50, each level best-responds to the one below.
+const LEVELS = [0, 1, 2, 3, 4].map(k => ({ k, value: 50 * Math.pow(2 / 3, k) }));
+
 function computeResults() {
-  if (gameState.guesses.length === 0) {
-    return null;
+  if (cache) return cache;
+  const list = [...state.entries.entries()].map(([cid, e]) => ({ cid, ...e }));
+  const n = list.length;
+  if (n === 0) {
+    cache = { count: 0, round: state.round };
+    return cache;
   }
+  const values = list.map(e => e.guess).sort((a, b) => a - b);
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const median = n % 2 ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
+  const target = (2 / 3) * mean;
 
-  const values = gameState.guesses.map(g => g.guess);
-  const average = values.reduce((sum, v) => sum + v, 0) / values.length;
-  const target = (2 / 3) * average;
+  // Rank everyone by distance to the target (ties share a rank).
+  const ranked = list
+    .map(e => ({ ...e, dist: Math.abs(e.guess - target) }))
+    .sort((a, b) => a.dist - b.dist);
+  const ranks = new Map();
+  let rank = 1;
+  ranked.forEach((e, i) => {
+    if (i > 0 && e.dist - ranked[i - 1].dist > 1e-9) rank = i + 1;
+    ranks.set(e.cid, rank);
+  });
+  const best = ranked[0].dist;
+  const winners = ranked
+    .filter(e => Math.abs(e.dist - best) < 1e-9)
+    .map(e => ({ name: e.name, guess: e.guess }));
 
-  // Find winners (closest to target)
-  const EPSILON = 1e-9;
-  let minDist = Infinity;
-  let winners = [];
+  // One bin per integer, 0..100.
+  const bins = new Array(101).fill(0);
+  for (const v of values) bins[Math.min(100, Math.max(0, Math.round(v)))]++;
 
-  for (const entry of gameState.guesses) {
-    const dist = Math.abs(entry.guess - target);
-    if (dist < minDist - EPSILON) {
-      minDist = dist;
-      winners = [entry];
-    } else if (Math.abs(dist - minDist) < EPSILON) {
-      winners.push(entry);
-    }
-  }
+  // How many people sit near each level-k benchmark (within ±2).
+  const levels = LEVELS.map(l => ({
+    ...l,
+    count: values.filter(v => Math.abs(v - l.value) <= 2).length
+  }));
+  const zeros = values.filter(v => v <= 1).length;
+  const dominated = values.filter(v => v > 200 / 3).length;
+  const hundreds = values.filter(v => v >= 100).length;
 
-  // Build histogram bins (0-5, 5-10, ..., 95-100)
-  const bins = new Array(20).fill(0);
-  const binLabels = [];
-  for (let i = 0; i < 20; i++) {
-    binLabels.push(`${i * 5}-${(i + 1) * 5}`);
-  }
-  for (const v of values) {
-    let idx = Math.floor(v / 5);
-    if (idx >= 20) idx = 19;
-    bins[idx]++;
-  }
-
-  return {
-    count: gameState.guesses.length,
-    average: Math.round(average * 100) / 100,
-    target: Math.round(target * 100) / 100,
+  cache = {
+    round: state.round,
+    count: n,
+    mean: round2(mean),
+    median: round2(median),
+    target: round2(target),
+    targetExact: target,
     winners,
-    isTie: winners.length > 1,
     bins,
-    binLabels,
-    guesses: gameState.guesses
+    levels,
+    zeros,
+    dominated,
+    hundreds,
+    min: values[0],
+    max: values[n - 1],
+    ranks
+  };
+  return cache;
+}
+
+function publicSummary() {
+  const r = computeResults();
+  if (!r.count) return null;
+  return {
+    count: r.count, mean: r.mean, median: r.median, target: r.target,
+    winners: r.winners, pick: state.pick
   };
 }
 
-// =====================
-//  PAGE ROUTES
-// =====================
-
-// Instructor lobby
-app.get('/', async (req, res) => {
-  const baseUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  const playUrl = `${baseUrl}/play`;
-
-  const qrDataUrl = await QRCode.toDataURL(playUrl, {
-    width: 400,
-    margin: 2,
-    color: { dark: '#00274C', light: '#ffffff' }
-  });
-
-  res.render('instructor', {
-    qrDataUrl,
-    playUrl,
-    count: gameState.guesses.length,
-    gameOpen: gameState.gameOpen
-  });
-});
-
-// Student entry form
-app.get('/play', (req, res) => {
-  if (!gameState.gameOpen) {
-    return res.redirect('/closed');
+// ---------------------------------------------------------------------------
+// Student API
+// ---------------------------------------------------------------------------
+app.get('/api/state', (req, res) => {
+  const cid = String(req.query.cid || '');
+  const out = { round: state.round, phase: state.phase, count: state.entries.size };
+  const mine = state.entries.get(cid);
+  if (mine) out.mine = { name: mine.name, guess: mine.guess };
+  if (state.phase === 'revealed') {
+    out.summary = publicSummary();
+    if (mine) {
+      const r = computeResults();
+      out.mine.rank = r.ranks.get(cid);
+      out.mine.dist = round2(Math.abs(mine.guess - r.targetExact));
+    }
   }
-  res.render('play', { error: null });
+  res.set('Cache-Control', 'no-store').json(out);
 });
 
-// Submit guess
-app.post('/play', (req, res) => {
-  if (!gameState.gameOpen) {
-    return res.redirect('/closed');
+app.post('/api/guess', (req, res) => {
+  if (state.phase !== 'open') {
+    return res.status(409).json({ error: state.phase === 'waiting'
+      ? "The game hasn't opened yet. Patience, grasshopper."
+      : 'Pencils down! Submissions are closed.' });
   }
-
-  const name = (req.body.name || '').trim();
-  const guess = parseFloat(req.body.guess);
-
-  if (!name) {
-    return res.render('play', { error: 'Please enter your name.' });
+  const cid = String(req.body.cid || '').slice(0, 64);
+  const name = String(req.body.name || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const guess = Number(req.body.guess);
+  if (cid.length < 8) return res.status(400).json({ error: 'Something went wrong. Refresh and try again.' });
+  if (!name) return res.status(400).json({ error: "We need a name to crown the winner." });
+  if (!Number.isFinite(guess) || guess < 0 || guess > 100) {
+    return res.status(400).json({ error: 'Pick a number from 0 to 100. (Nice try.)' });
   }
-  if (name.length > 100) {
-    return res.render('play', { error: 'Name is too long.' });
-  }
-  if (isNaN(guess) || guess < 0 || guess > 100) {
-    return res.render('play', { error: 'Please enter a number between 0 and 100.' });
-  }
-
-  gameState.guesses.push({
-    name,
-    guess: Math.round(guess * 100) / 100
-  });
-
-  res.redirect('/play/thanks');
+  state.entries.set(cid, { name, guess: round2(guess), at: Date.now() });
+  invalidate();
+  res.json({ ok: true, round: state.round, guess: round2(guess), count: state.entries.size });
 });
 
-// Confirmation
-app.get('/play/thanks', (req, res) => {
-  res.render('thanks');
-});
+// ---------------------------------------------------------------------------
+// Teacher API
+// ---------------------------------------------------------------------------
+function teacherOnly(req, res, next) {
+  if (req.get('x-teacher-key') === TEACHER_KEY) return next();
+  res.status(401).json({ error: 'Teacher key required' });
+}
 
-// Results page
-app.get('/results', (req, res) => {
-  const results = computeResults();
-  res.render('results', { results });
-});
+app.get('/api/teacher/check', teacherOnly, (req, res) => res.json({ ok: true }));
 
-// Explain page
-app.get('/explain', (req, res) => {
-  const results = computeResults();
-  res.render('explain', { results });
-});
-
-// Closed page
-app.get('/closed', (req, res) => {
-  res.render('closed');
-});
-
-// =====================
-//  API ROUTES
-// =====================
-
-app.get('/api/status', (req, res) => {
-  res.json({
-    count: gameState.guesses.length,
-    gameOpen: gameState.gameOpen
+app.get('/api/teacher/results', teacherOnly, (req, res) => {
+  const r = computeResults();
+  const { ranks, targetExact, ...rest } = r;
+  res.set('Cache-Control', 'no-store').json({
+    ...rest, phase: state.phase, pick: state.pick, history: state.history
   });
 });
 
-app.get('/api/results', (req, res) => {
-  res.json(computeResults());
+app.post('/api/teacher/phase', teacherOnly, (req, res) => {
+  const phase = req.body.phase;
+  if (!['waiting', 'open', 'closed', 'revealed'].includes(phase)) {
+    return res.status(400).json({ error: 'Bad phase' });
+  }
+  state.phase = phase;
+  res.json({ ok: true, phase });
 });
 
-app.post('/api/close', (req, res) => {
-  gameState.gameOpen = false;
-  res.json({ success: true });
+app.post('/api/teacher/pick', teacherOnly, (req, res) => {
+  const r = computeResults();
+  if (!r.count || r.winners.length < 2) return res.json({ pick: null });
+  state.pick = r.winners[Math.floor(Math.random() * r.winners.length)];
+  res.json({ pick: state.pick });
 });
 
-app.post('/api/open', (req, res) => {
-  gameState.gameOpen = true;
-  res.json({ success: true });
+// Start a fresh round. Keeps a summary of the old one so we can show convergence.
+app.post('/api/teacher/reset', teacherOnly, (req, res) => {
+  const r = computeResults();
+  if (r.count && !req.body.discard) {
+    state.history.push({ round: state.round, count: r.count, mean: r.mean, target: r.target });
+  }
+  if (req.body.wipeHistory) state.history = [];
+  state.round = req.body.wipeHistory ? 1 : state.round + 1;
+  state.entries.clear();
+  state.phase = 'waiting';
+  state.pick = null;
+  invalidate();
+  res.json({ ok: true, round: state.round });
 });
 
-app.post('/api/reset', (req, res) => {
-  gameState.guesses = [];
-  gameState.gameOpen = true;
-  res.json({ success: true });
+// Rehearsal helper: fill the room with ~500 plausible fake students.
+app.post('/api/teacher/demo', teacherOnly, (req, res) => {
+  const n = Math.min(1000, Number(req.body.n) || 500);
+  const first = ['Ava', 'Liam', 'Noah', 'Emma', 'Mia', 'Owen', 'Zoe', 'Eli', 'Maya', 'Jack', 'Lena', 'Omar',
+    'Priya', 'Sam', 'Grace', 'Leo', 'Nora', 'Ethan', 'Isla', 'Ben', 'Aria', 'Kai', 'Ruby', 'Max', 'Jada',
+    'Theo', 'Lucy', 'Dev', 'Hana', 'Cole', 'Ivy', 'Luis', 'Tess', 'Ari', 'June', 'Raj', 'Nina', 'Finn'];
+  const gauss = () => Math.sqrt(-2 * Math.log(Math.random() || 1e-9)) * Math.cos(2 * Math.PI * Math.random());
+  const draw = () => {
+    const u = Math.random();
+    if (u < 0.10) return Math.random() * 100;
+    if (u < 0.22) return 50 + gauss() * 3;
+    if (u < 0.45) return 33 + gauss() * 2.5;
+    if (u < 0.63) return 22 + gauss() * 2;
+    if (u < 0.73) return 15 + gauss() * 1.5;
+    if (u < 0.80) return 10 + gauss() * 1.5;
+    if (u < 0.88) return Math.random() < 0.7 ? 0 : 1;
+    if (u < 0.94) return Math.random() * 12;
+    return [66, 67, 69, 77, 100, 42][Math.floor(Math.random() * 6)];
+  };
+  for (let i = 0; i < n; i++) {
+    const g = Math.round(Math.max(0, Math.min(100, draw())));
+    const name = `${first[i % first.length]} ${String.fromCharCode(65 + Math.floor(Math.random() * 26))}.`;
+    state.entries.set(`demo-${state.round}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+      { name, guess: g, at: Date.now() });
+  }
+  invalidate();
+  res.json({ ok: true, count: state.entries.size });
 });
 
-// =====================
-//  START
-// =====================
+// QR code for the student URL (SVG so it stays crisp on a projector).
+app.get('/qr.svg', async (req, res) => {
+  const url = playUrl(req);
+  const svg = await QRCode.toString(url, {
+    type: 'svg', margin: 1, errorCorrectionLevel: 'M',
+    color: { dark: '#00274C', light: '#FFFFFF' }
+  });
+  res.type('image/svg+xml').set('Cache-Control', 'no-store').send(svg);
+});
+
+app.get('/api/info', (req, res) => res.json({ playUrl: playUrl(req) }));
+
+function playUrl(req) {
+  return (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+}
+
+app.get('/teacher', (req, res) => res.sendFile(path.join(__dirname, 'public', 'teacher.html')));
+
 app.listen(PORT, () => {
-  console.log(`Two-Thirds Game running on port ${PORT}`);
+  console.log(`Two-Thirds Game on http://localhost:${PORT}  (teacher: /teacher, key: ${process.env.TEACHER_KEY ? '[env]' : TEACHER_KEY})`);
 });

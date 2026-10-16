@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two-Thirds Game · Teacher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/teacher.css">
+</head>
+<body class="grain">
+<div class="viewport">
+<div class="stage" id="stage">
+
+  <header class="topbar">
+    <div class="brand"><span class="brand-frac">⅔</span> Econ 101 · The Two-Thirds Game</div>
+    <div class="schools"><span class="um">Michigan</span><span class="x">at</span><span class="wmu">Western</span></div>
+  </header>
+
+  <!-- 0 · TITLE -->
+  <section class="slide slide-title" data-name="Welcome">
+    <div class="title-left">
+      <div class="kicker">Guest lecture · Western Michigan University · Kalamazoo</div>
+      <h1 class="mega">The<br>Two-Thirds<br><span class="hl">Game</span></h1>
+      <p class="lede">How to outsmart 500 people by being exactly <em>one</em> step smarter than them.</p>
+      <div class="byline">
+        <div class="byline-name">Prof. Justin Wolfers</div>
+        <div class="byline-role">University of Michigan · visiting with respect, and snacks</div>
+      </div>
+    </div>
+    <div class="title-right">
+      <svg class="road" viewBox="0 0 640 620" aria-hidden="true">
+        <defs>
+          <linearGradient id="asphalt" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0B3A66" stop-opacity="0"/>
+            <stop offset="1" stop-color="#0B3A66" stop-opacity="0.9"/>
+          </linearGradient>
+        </defs>
+        <path d="M250 620 L300 240 L340 240 L560 620 Z" fill="url(#asphalt)"/>
+        <path d="M320 250 L330 300 M333 330 L345 400 M350 440 L366 530 M372 570 L380 620" stroke="#FFCB05" stroke-width="7" stroke-linecap="round"/>
+        <!-- green highway sign -->
+        <g transform="translate(70 40)">
+          <rect x="0" y="0" width="500" height="200" rx="18" fill="#0F6B3E" stroke="#F6F1E4" stroke-width="6"/>
+          <rect x="14" y="14" width="472" height="172" rx="10" fill="none" stroke="#F6F1E4" stroke-width="2" opacity="0.5"/>
+          <!-- I-94 shield -->
+          <g transform="translate(34 34)">
+            <path d="M0 22 Q0 0 22 0 L106 0 Q128 0 128 22 L128 70 Q128 118 64 136 Q0 118 0 70 Z" fill="#F6F1E4"/>
+            <path d="M8 26 L120 26 L120 70 Q120 112 64 128 Q8 112 8 70 Z" fill="#0B3A66"/>
+            <path d="M8 8 L120 8 L120 24 L8 24 Z" fill="#C8102E"/>
+            <text x="64" y="21" font-family="Inter" font-weight="700" font-size="12" fill="#F6F1E4" text-anchor="middle">INTERSTATE</text>
+            <text x="64" y="92" font-family="Big Shoulders Display, sans-serif" font-weight="900" font-size="62" fill="#F6F1E4" text-anchor="middle">94</text>
+          </g>
+          <text x="190" y="64" font-family="Inter" font-weight="700" font-size="26" fill="#F6F1E4">WEST</text>
+          <text x="188" y="122" font-family="Big Shoulders Display, sans-serif" font-weight="800" font-size="58" fill="#F6F1E4">Kalamazoo</text>
+          <text x="190" y="164" font-family="Inter" font-weight="600" font-size="24" fill="#F6F1E4" opacity="0.9">Ann Arbor ← ~100 mi</text>
+        </g>
+        <!-- maize car heading west -->
+        <g transform="translate(298 420)">
+          <rect x="-26" y="0" width="52" height="80" rx="16" fill="#FFCB05"/>
+          <rect x="-18" y="12" width="36" height="20" rx="6" fill="#00274C"/>
+          <rect x="-18" y="52" width="36" height="16" rx="5" fill="#00274C" opacity="0.6"/>
+        </g>
+      </svg>
+      <div class="road-caption">I drove 100 miles down I-94 to play a game with you.<br>Relax. I left the football team at home.</div>
+    </div>
+  </section>
+
+  <!-- 1 · RULES -->
+  <section class="slide slide-rules" data-name="Rules">
+    <div class="kicker">The rules</div>
+    <h2 class="h2">Three rules. One winner.<br><span class="dim">Zero luck required.</span></h2>
+    <div class="rule-cards">
+      <div class="rule-card">
+        <div class="rule-num">1</div>
+        <div class="rule-text">Pick a number from <b>0 to 100</b>.</div>
+        <div class="rule-note">Decimals welcome. Imaginary numbers, not so much.</div>
+      </div>
+      <div class="rule-card">
+        <div class="rule-num">2</div>
+        <div class="rule-text">We take the <b>average</b> of everyone's numbers.</div>
+        <div class="rule-note">Yes, all ~500 of you. Every guess counts equally.</div>
+      </div>
+      <div class="rule-card rule-card-hot">
+        <div class="rule-num">3</div>
+        <div class="rule-text">Whoever is closest to <b>⅔ of the average</b> wins.</div>
+        <div class="rule-note">Average of 60 → the winning number is 40.</div>
+      </div>
+    </div>
+    <div class="rules-foot">
+      <div class="prize"><span class="prize-label">Prize</span><span class="prize-text" id="prizeText" contenteditable="true" spellcheck="false">Eternal glory, and bragging rights over a Michigan professor</span></div>
+      <div class="fineprint">Ties broken by coin flip. Bribes accepted in neither maize nor brown &amp; gold.</div>
+    </div>
+  </section>
+
+  <!-- 2 · JOIN -->
+  <section class="slide slide-join" data-name="Play">
+    <div class="join-left">
+      <div class="qr-card">
+        <img id="qr" src="/qr.svg" alt="QR code to join the game">
+        <div class="qr-url" id="playUrl">loading…</div>
+      </div>
+    </div>
+    <div class="join-right">
+      <div class="kicker">Grab your phone</div>
+      <h2 class="h2">Scan. Guess.<br><span class="hl">Outthink everyone.</span></h2>
+      <div class="join-reminder">Pick 0–100. Closest to <b>⅔ of the average</b> wins.</div>
+      <div class="counter">
+        <div class="counter-num" id="count">0</div>
+        <div class="counter-label">guesses locked in</div>
+      </div>
+      <div class="quip" id="quip">The game opens when the professor says so.</div>
+      <div class="join-actions teacher-only">
+        <span class="phase-pill" id="phasePill">Waiting</span>
+        <button class="btn btn-maize" id="joinToggle">Open the game</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · DISTRIBUTION -->
+  <section class="slide slide-dist" data-name="Results">
+    <div class="dist-head">
+      <div>
+        <div class="kicker">The moment of truth</div>
+        <h2 class="h2 h2-sm">Here's what you guessed</h2>
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="chart-wrap">
+      <svg id="hist" class="hist" viewBox="0 0 1500 540"></svg>
+      <div class="reveal-cover" id="revealCover">
+        <div class="drum">🥁</div>
+        <div class="reveal-msg" id="revealMsg">Submissions are still open.</div>
+        <button class="btn btn-maize btn-xl teacher-only" id="revealBtn">Close the game &amp; reveal</button>
+      </div>
+    </div>
+    <div class="callouts" id="callouts"></div>
+  </section>
+
+  <!-- 4 · WINNER -->
+  <section class="slide slide-winner" data-name="Winner">
+    <canvas id="confetti" class="confetti"></canvas>
+    <div class="winner-inner" id="winnerInner">
+      <div class="kicker">And the winner is…</div>
+      <button class="btn btn-maize btn-xl teacher-only" id="winnerBtn">Open the envelope</button>
+    </div>
+  </section>
+
+  <!-- 5 · HOW IT WORKS -->
+  <section class="slide slide-how" data-name="The logic">
+    <div class="kicker">How the game works</div>
+    <h2 class="h2">Your best guess depends on<br><span class="hl">what you think everyone else will guess.</span></h2>
+    <div class="how-grid">
+      <div class="how-card how-slider">
+        <div class="how-label">If I think the class average will be…</div>
+        <div class="how-big" id="avgOut">50</div>
+        <input type="range" id="avgIn" min="0" max="100" step="1" value="50">
+        <div class="how-arrow">↓ multiply by ⅔ ↓</div>
+        <div class="how-label">…then I should guess</div>
+        <div class="how-big hl" id="bestOut">33.3</div>
+      </div>
+      <div class="how-card">
+        <div class="how-step"><span class="tag">Step 1</span> The average can't be more than 100.</div>
+        <div class="how-step"><span class="tag">Step 2</span> So ⅔ of the average can't be more than <b>66.7</b>.</div>
+        <div class="how-step"><span class="tag">Step 3</span> So any guess above 66.7 is <b>dominated</b>: guessing 66.7 always does at least as well.</div>
+        <div class="how-callout" id="dominatedNote">Economists call a choice <em>dominated</em> when another choice is always at least as good. Picking one is like ordering the gas-station sushi.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · LEVEL-K -->
+  <section class="slide slide-levels" data-name="Level-k thinking">
+    <div class="levels-head">
+      <div>
+        <div class="kicker">Level-k thinking</div>
+        <h2 class="h2 h2-sm">How many steps ahead did you think?</h2>
+      </div>
+      <div class="levels-verdict" id="levelVerdict"></div>
+    </div>
+    <div class="stairs" id="stairs"></div>
+    <div class="levels-foot">Each level assumes everyone else is one level below them, and multiplies by ⅔. Bars show the share of this room within ±2 of each number.</div>
+  </section>
+
+  <!-- 7 · NASH -->
+  <section class="slide slide-nash" data-name="Nash equilibrium">
+    <div class="kicker">Nash equilibrium</div>
+    <h2 class="h2 h2-sm">Keep thinking, and the numbers collapse to <span class="hl">zero</span>.</h2>
+    <div class="nash-def">
+      <b>Nash equilibrium:</b> a situation where nobody can do better by changing their own choice, given what everyone else is doing.
+    </div>
+    <div class="nash-line-wrap">
+      <svg id="nashLine" viewBox="0 0 1400 220" class="nash-line"></svg>
+    </div>
+    <div class="nash-controls">
+      <div class="nash-text" id="nashText">If everyone is rational, what's the highest number anyone should ever pick?</div>
+      <button class="btn btn-ghost" id="nashBtn">Next round of reasoning →</button>
+    </div>
+  </section>
+
+  <!-- 8 · WHY NOT ZERO -->
+  <section class="slide slide-why" data-name="Theory vs. you">
+    <div class="kicker">So… why didn't we get zero?</div>
+    <h2 class="h2 h2-sm">Being right about the math ≠ <span class="hl">winning the game</span>.</h2>
+    <div class="why-grid">
+      <div class="why-card why-nash">
+        <div class="why-label">Nash equilibrium says</div>
+        <div class="why-num">0</div>
+        <div class="why-sub">if everyone is rational, and knows everyone is rational, and knows that everyone knows…</div>
+      </div>
+      <div class="why-vs">vs</div>
+      <div class="why-card why-room">
+        <div class="why-label">This room actually needed</div>
+        <div class="why-num" id="whyTarget">—</div>
+        <div class="why-sub" id="whySub">Picking 0 here would have lost.</div>
+      </div>
+    </div>
+    <div class="lessons">
+      <div class="lesson"><span class="lesson-n">1</span><div><b>Win by being one step ahead of the crowd.</b> Not two. Definitely not infinity.</div></div>
+      <div class="lesson"><span class="lesson-n">2</span><div><b>Keynes's beauty contest.</b> Investors don't pick the stock they like; they pick what they think others will think others will like.</div></div>
+      <div class="lesson"><span class="lesson-n">3</span><div><b>Play again and you'll creep toward 0.</b> People learn. Want to try?</div></div>
+    </div>
+    <div class="history" id="history"></div>
+    <div class="why-actions teacher-only"><button class="btn btn-maize" id="againBtn">Play round 2 →</button></div>
+  </section>
+
+  <!-- 9 · THANKS -->
+  <section class="slide slide-thanks" data-name="Thanks">
+    <div class="thanks-frac">⅔</div>
+    <h1 class="mega mega-sm">Thank you,<br><span class="gold">Western Michigan!</span></h1>
+    <p class="lede">In economics, as in life: it pays to think about how other people think.</p>
+    <div class="thanks-foot">Go Broncos. <span class="dim">(Except, you know, against Michigan.)</span></div>
+  </section>
+
+  <footer class="bottombar">
+    <div class="dots" id="dots"></div>
+    <div class="hint">← → to navigate · F for fullscreen</div>
+  </footer>
+</div>
+</div>
+
+<!-- Teacher control dock (lives outside the scaled stage) -->
+<div class="dock" id="dock">
+  <div class="dock-row">
+    <span class="dock-phase" id="dockPhase">—</span>
+    <span class="dock-count"><b id="dockCount">0</b> in</span>
+    <button class="dock-toggle" id="dockToggle" title="Show controls">⚙</button>
+  </div>
+  <div class="dock-panel" id="dockPanel">
+    <div class="dock-locked" id="dockLocked">
+      <input id="keyIn" type="password" placeholder="Teacher key" autocomplete="off">
+      <button id="keyBtn">Unlock</button>
+    </div>
+    <div class="dock-buttons" id="dockButtons">
+      <button data-phase="open">Open</button>
+      <button data-phase="closed">Close</button>
+      <button data-phase="revealed">Reveal to phones</button>
+      <button id="dockNew">New round</button>
+      <button id="dockDemo">+500 demo guesses</button>
+      <button id="dockWipe" class="danger">Wipe everything</button>
+    </div>
+  </div>
+</div>
+
+<script src="/teacher.js"></script>
+</body>
+</html>

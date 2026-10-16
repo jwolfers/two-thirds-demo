@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00274C">
+<title>The Two-Thirds Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/student.css">
+</head>
+<body>
+<div class="stripe"></div>
+<header class="top">
+  <div class="logo"><span class="frac">⅔</span><span>The Two-Thirds Game</span></div>
+  <div class="schools"><span class="um">UM</span><span class="x">at</span><span class="wmu">WMU</span></div>
+</header>
+
+<main id="app">
+  <!-- loading -->
+  <section class="card view" data-view="loading">
+    <div class="spinner">⅔</div>
+    <p class="muted center">Warming up the economics…</p>
+  </section>
+
+  <!-- waiting for teacher -->
+  <section class="card view" data-view="waiting">
+    <div class="spinner">⅔</div>
+    <h1>Hang tight.</h1>
+    <p>The professor hasn't opened the game yet. Use this time wisely: think about what everyone <em>else</em> is thinking.</p>
+    <div class="rules-mini">
+      <div><b>1</b> Pick a number from 0 to 100.</div>
+      <div><b>2</b> We average everyone's guesses.</div>
+      <div><b>3</b> Closest to <span class="hl">⅔ of the average</span> wins.</div>
+    </div>
+  </section>
+
+  <!-- the form -->
+  <section class="card view" data-view="form">
+    <div class="eyebrow">Your move</div>
+    <h1>Pick a number.</h1>
+    <p class="muted">Closest to <span class="hl">⅔ of the class average</span> wins.</p>
+    <form id="form" autocomplete="off">
+      <label class="field">
+        <span>Your name <small>(so we can crown you)</small></span>
+        <input id="name" maxlength="40" placeholder="First and last name" required>
+      </label>
+      <label class="field">
+        <span>Your guess</span>
+        <div class="guess-wrap">
+          <input id="guess" inputmode="decimal" placeholder="0–100" required>
+        </div>
+      </label>
+      <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Guess slider">
+      <div class="scale"><span>0</span><span>50</span><span>100</span></div>
+      <div class="error" id="error"></div>
+      <button class="cta" id="submit" type="submit">Lock it in</button>
+      <p class="tiny muted center">You can change your guess until the game closes.</p>
+    </form>
+  </section>
+
+  <!-- submitted -->
+  <section class="card view" data-view="submitted">
+    <div class="eyebrow">Locked in</div>
+    <div class="ticket">
+      <div class="ticket-label">Your guess</div>
+      <div class="ticket-num" id="myGuess">—</div>
+      <div class="ticket-name" id="myName"></div>
+    </div>
+    <p class="center" id="waitQuip">Now we wait. Somewhere, a Level 3 thinker is sweating.</p>
+    <p class="center muted"><b id="liveCount">0</b> guesses in so far</p>
+    <button class="ghost" id="change">Change my guess</button>
+  </section>
+
+  <!-- closed -->
+  <section class="card view" data-view="closed">
+    <div class="eyebrow">Pencils down</div>
+    <h1>Eyes up front.</h1>
+    <p id="closedMsg">The game is closed. The professor is about to reveal the results.</p>
+    <div class="ticket small" id="closedTicket">
+      <div class="ticket-label">Your guess</div>
+      <div class="ticket-num" id="closedGuess">—</div>
+    </div>
+  </section>
+
+  <!-- revealed -->
+  <section class="card view" data-view="revealed">
+    <div class="eyebrow" id="resEyebrow">Results</div>
+    <h1 id="resHead">Here's how you did.</h1>
+    <div class="res-grid">
+      <div class="res"><div class="res-label">Class average</div><div class="res-num" id="resMean">—</div></div>
+      <div class="res hot"><div class="res-label">Winning target</div><div class="res-num" id="resTarget">—</div></div>
+      <div class="res"><div class="res-label">Your guess</div><div class="res-num" id="resMine">—</div></div>
+      <div class="res"><div class="res-label">Your rank</div><div class="res-num" id="resRank">—</div></div>
+    </div>
+    <p id="resQuip"></p>
+    <p class="tiny muted center">Now look up. The professor is about to explain why.</p>
+  </section>
+</main>
+
+<footer class="foot">Econ 101 · University of Michigan visits Western Michigan · Go Blue / Go Broncos</footer>
+<script src="/student.js"></script>
+</body>
+</html>
