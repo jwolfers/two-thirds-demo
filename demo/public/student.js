@@ -102,7 +102,7 @@ function renderResults() {
 
 async function poll() {
   try {
-    const r = await fetch(`/api/state?cid=${encodeURIComponent(cid)}`, { cache: 'no-store' });
+    const r = await fetch(`/demo/api/state?cid=${encodeURIComponent(cid)}`, { cache: 'no-store' });
     const s = await r.json();
     if (state && s.round !== state.round) editing = false;
     state = s;
@@ -132,7 +132,7 @@ $('#form').onsubmit = async e => {
   const btn = $('#submit');
   btn.disabled = true; btn.textContent = 'Locking…';
   try {
-    const r = await fetch('/api/guess', {
+    const r = await fetch('/demo/api/guess', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cid, name, guess })
     });

@@ -30,7 +30,7 @@ async function api(path, body) {
 async function unlock(k) {
   key = k;
   try {
-    await api('/api/teacher/check');
+    await api('/demo/api/teacher/check');
     isTeacher = true;
     localStorage.setItem('tt-key', key);
   } catch { isTeacher = false; }
@@ -77,7 +77,7 @@ let results = null;
 
 async function poll() {
   try {
-    const s = await fetch('/api/state').then(r => r.json());
+    const s = await fetch('/demo/api/state').then(r => r.json());
     const grew = s.count !== live.count;
     live = s;
     renderLive(grew);
@@ -116,21 +116,21 @@ function quip() {
 
 async function setPhase(phase) {
   if (!isTeacher) return;
-  await api('/api/teacher/phase', { phase });
+  await api('/demo/api/teacher/phase', { phase });
   live.phase = phase;
   renderLive(false);
 }
 
 async function loadResults() {
   if (!isTeacher) return null;
-  results = await api('/api/teacher/results');
+  results = await api('/demo/api/teacher/results');
   return results;
 }
 
 // ---------------------------------------------------------------- join slide
-fetch('/api/info').then(r => r.json()).then(d => { $('#playUrl').textContent = d.playUrl.replace(/^https?:\/\//, ''); });
+fetch('/demo/api/info').then(r => r.json()).then(d => { $('#playUrl').textContent = d.playUrl.replace(/^https?:\/\//, ''); });
 $('#joinToggle').onclick = () => setPhase(live.phase === 'open' ? 'closed' : 'open');
-onEnter['Play'] = () => { $('#qr').src = '/qr.svg?' + Date.now(); };
+onEnter['Play'] = () => { $('#qr').src = '/demo/qr.svg?' + Date.now(); };
 
 // ---------------------------------------------------------------- distribution slide
 let shownRound = null;
@@ -286,7 +286,7 @@ async function showWinner() {
 
 async function flipCoin() {
   $('#flipBtn').disabled = true;
-  const { pick } = await api('/api/teacher/pick', {});
+  const { pick } = await api('/demo/api/teacher/pick', {});
   const chips = $$('.tie-chip').filter(c => !c.textContent.startsWith('+'));
   let idx = chips.findIndex(c => c.textContent === pick.name);
   if (idx < 0) idx = chips.length - 1; // winner beyond the visible list: land on the last chip, then reveal
@@ -443,7 +443,7 @@ onEnter['Theory vs. you'] = async () => {
 };
 
 $('#againBtn').onclick = async () => {
-  await api('/api/teacher/reset', {});
+  await api('/demo/api/teacher/reset', {});
   results = null; shownRound = null; winnerShownRound = null;
   await setPhase('open');
   go(slides.findIndex(s => s.dataset.name === 'Play'));
@@ -460,17 +460,17 @@ $('#keyIn').onkeydown = e => { if (e.key === 'Enter') $('#keyBtn').click(); };
 $$('.dock-buttons [data-phase]').forEach(b => b.onclick = () => setPhase(b.dataset.phase));
 $('#dockNew').onclick = async () => {
   if (!confirm('Start a new round? This round’s guesses are cleared (its summary is kept for comparison).')) return;
-  await api('/api/teacher/reset', {});
+  await api('/demo/api/teacher/reset', {});
   results = null; shownRound = null; winnerShownRound = null;
   go(slides.findIndex(s => s.dataset.name === 'Play'));
 };
 $('#dockDemo').onclick = async () => {
-  await api('/api/teacher/demo', { n: 500 });
+  await api('/demo/api/teacher/demo', { n: 500 });
   results = null;
 };
 $('#dockWipe').onclick = async () => {
   if (!confirm('Wipe all guesses and all round history?')) return;
-  await api('/api/teacher/reset', { discard: true, wipeHistory: true });
+  await api('/demo/api/teacher/reset', { discard: true, wipeHistory: true });
   results = null; shownRound = null; winnerShownRound = null;
   go(0);
 };
