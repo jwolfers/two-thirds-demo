@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00274C">
+<title>⅔ of a Chance · Play</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2300274C'/><text x='50' y='70' font-size='56' text-anchor='middle' fill='%23FFCB05' font-family='Arial' font-weight='bold'>⅔</text></svg>">
+<link rel="stylesheet" href="brand.css">
+<link rel="stylesheet" href="play.css">
+</head>
+<body>
+<div class="stripe"></div>
+<header class="head">
+  <span class="mark" data-mark="M" style="width:34px"></span>
+  <span class="vs">×</span>
+  <span class="mark" data-mark="W" style="width:34px"></span>
+  <div class="head-text"><b>⅔ of a Chance</b><small>Round <span id="round">1</span></small></div>
+</header>
+
+<main>
+  <!-- How to play: always visible up top, collapses once you've guessed -->
+  <details class="card rules" id="rules" open>
+    <summary>How to play</summary>
+    <ol>
+      <li>Pick a number from <b>0 to 100</b>.</li>
+      <li>We average everyone's guesses.</li>
+      <li>Closest to <b>⅔ of the average</b> wins.</li>
+    </ol>
+    <p class="hint">So you're not guessing a number. You're guessing what everyone <i>else</i> will guess. Good luck, and may the best brain win.</p>
+  </details>
+
+  <!-- Lobby -->
+  <section class="card view" id="v-lobby">
+    <div class="emoji">⏳</div>
+    <h2>Hang tight</h2>
+    <p>The game isn't open yet. Use this time to stretch, hydrate, or contemplate the infinite regress of "what do they think I think they think?"</p>
+  </section>
+
+  <!-- Open: the form -->
+  <section class="card view" id="v-open">
+    <h2>Your guess</h2>
+    <label class="lbl" for="name">Your name <small>(shown only if you win)</small></label>
+    <input id="name" maxlength="24" autocomplete="nickname" placeholder="e.g. Bucky Bronco">
+    <label class="lbl" for="guess">Your number, 0 to 100</label>
+    <div class="guess-row">
+      <button class="step" data-d="-1" aria-label="Minus one">−</button>
+      <input id="guess" type="number" inputmode="decimal" min="0" max="100" step="any" placeholder="?">
+      <button class="step" data-d="1" aria-label="Plus one">+</button>
+    </div>
+    <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Guess slider">
+    <p id="quip" class="quip">Slide, tap, or type.</p>
+    <button id="submit" class="btn submit">Lock it in</button>
+    <p id="err" class="err" hidden></p>
+    <div id="locked" class="locked" hidden>
+      ✅ Locked in: <b id="lockedVal"></b><br><small>You can change it until the professor closes the game.</small>
+    </div>
+  </section>
+
+  <!-- Closed -->
+  <section class="card view" id="v-closed">
+    <div class="emoji">🥁</div>
+    <h2>Pencils down!</h2>
+    <p id="closedMsg">Guesses are closed. The professor is building suspense, as professors do. Eyes on the big screen.</p>
+  </section>
+
+  <!-- Revealed -->
+  <section class="card view" id="v-revealed">
+    <div id="resEmoji" class="emoji">🎉</div>
+    <h2 id="resHead">Results</h2>
+    <div class="res-grid">
+      <div><small>Average</small><b id="rMean"></b></div>
+      <div class="hot"><small>Target (⅔ × avg)</small><b id="rTarget"></b></div>
+      <div><small>Your guess</small><b id="rMine"></b></div>
+      <div><small>Your rank</small><b id="rRank"></b></div>
+    </div>
+    <p id="resMsg" class="res-msg"></p>
+    <p id="resLevel" class="res-level"></p>
+  </section>
+</main>
+
+<footer class="foot">Hail to the Victors · Go Broncos · Go Game Theory</footer>
+
+<script src="marks.js"></script>
+<script src="play.js"></script>
+</body>
+</html>

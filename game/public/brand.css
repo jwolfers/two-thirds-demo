@@ -1,0 +1,62 @@
+/* Shared brand tokens: Michigan (maize & blue) meets Western Michigan (brown & gold). */
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Source+Sans+3:wght@400;600;700;800&display=swap');
+
+:root {
+  --um-blue: #00274C;
+  --um-blue-2: #0B3A68;
+  --um-blue-3: #1A4F86;
+  --maize: #FFCB05;
+  --wmu-brown: #6C4023;
+  --wmu-brown-2: #4A2B17;
+  --wmu-gold: #F1C500;
+  --cream: #FFF8E3;
+  --ink: #0D1B2A;
+  --muted: #A9BCD3;
+  --good: #3DDC97;
+  --bad: #FF6B6B;
+  --head: 'Oswald', 'Arial Narrow', Impact, sans-serif;
+  --body: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: var(--body); color: #fff; background: var(--um-blue); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--head); font-weight: 700; letter-spacing: .01em; margin: 0; text-transform: uppercase; }
+
+/* Four-color stripe: maize | blue | gold | brown */
+.stripe {
+  height: 8px;
+  background: linear-gradient(90deg,
+    var(--maize) 0 25%, var(--um-blue-3) 25% 50%, var(--wmu-gold) 50% 75%, var(--wmu-brown) 75% 100%);
+}
+
+.mark { display: inline-block; vertical-align: middle; }
+.mark svg { display: block; width: 100%; height: auto; }
+.vs { font-family: var(--head); color: var(--muted); font-weight: 500; }
+
+.btn {
+  font-family: var(--head); font-size: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  border: 0; border-radius: 10px; padding: .6em 1.1em; cursor: pointer; color: var(--um-blue); background: var(--maize);
+  transition: transform .08s ease, filter .15s ease, opacity .15s;
+}
+.btn:hover { filter: brightness(1.06); }
+.btn:active { transform: translateY(1px) scale(.98); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn.gold { background: var(--wmu-gold); color: var(--wmu-brown-2); }
+.btn.brown { background: var(--wmu-brown); color: var(--wmu-gold); }
+.btn.ghost { background: transparent; color: #fff; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.btn.danger { background: transparent; color: var(--bad); box-shadow: inset 0 0 0 2px rgba(255,107,107,.5); }
+
+.pill {
+  display: inline-flex; align-items: center; gap: .45em; font-family: var(--head); text-transform: uppercase;
+  font-size: .85rem; letter-spacing: .06em; padding: .3em .8em; border-radius: 999px;
+  background: rgba(255,255,255,.12); color: #fff;
+}
+.pill .dot { width: .6em; height: .6em; border-radius: 50%; background: var(--muted); }
+.pill.lobby .dot { background: var(--muted); }
+.pill.open .dot { background: var(--good); animation: pulse 1.2s infinite; }
+.pill.closed .dot { background: var(--wmu-gold); }
+.pill.revealed .dot { background: var(--maize); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(61,220,151,.7); } 50% { box-shadow: 0 0 0 .4em rgba(61,220,151,0); } }
+
+#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
