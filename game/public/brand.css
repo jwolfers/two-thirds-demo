@@ -1,45 +1,27 @@
-/* Maize and blue, shared by the phones and the projector. */
-@import url('https://fonts.googleapis.com/css2?family=Graduate&family=Montserrat:ital,wght@0,400;0,600;0,800;0,900;1,600&display=swap');
+/* Shared Michigan look: maize, blue, Montserrat for words, Oswald for scoreboard numbers. */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,600;0,700;0,800;0,900;1,600&family=Oswald:wght@500;700&display=swap');
 
 :root {
-  --blue: #00274C;
-  --blue-2: #0b3a68;
-  --blue-3: #1b4f86;
   --maize: #FFCB05;
-  --maize-2: #ffe27a;
-  --white: #ffffff;
+  --maize-soft: #FFE57F;
+  --blue: #00274C;
+  --blue-2: #0B3A66;
+  --blue-3: #1F4E7E;
   --ink: #00274C;
-  --muted: #5d6f84;
-  --paper: #f6f4ec;
-  --turf: #2f7d3a;
-  --turf-2: #368a42;
-  --red: #c8102e;
-  --ok: #1f8a4c;
-  --display: 'Graduate', 'Rockwell', Georgia, serif;
-  --sans: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+  --paper: #FFFFFF;
+  --cloud: #F2F4F7;
+  --grey: #8A97A6;
+  --tappan: #575294; /* a Michigan accent */
+  --ross: #2F65A7;
+  --red: #C8102E; /* reserved for Ohio State jokes */
+  --font: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+  --num: 'Oswald', 'Montserrat', Impact, sans-serif;
 }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
-body { font-family: var(--sans); color: var(--ink); background: var(--blue); }
-button { font: inherit; cursor: pointer; }
-
-/* Block M: a hand-drawn homage, not the official logo file. */
-.blockm { display: inline-block; aspect-ratio: 120 / 86; background: no-repeat center / contain url('m.svg'); }
-
-.wing-stripes {
-  background:
-    linear-gradient(90deg, transparent 0 calc(50% - 22px), var(--maize) calc(50% - 22px) calc(50% - 16px), transparent calc(50% - 16px) calc(50% + 16px), var(--maize) calc(50% + 16px) calc(50% + 22px), transparent calc(50% + 22px)),
-    var(--blue);
-}
-
-.pill { display: inline-flex; align-items: center; gap: .45em; border-radius: 999px; padding: .3em .9em; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; font-size: .8em; }
-.pill .dot { width: .6em; height: .6em; border-radius: 50%; background: currentColor; }
-.pill.lobby { background: #dfe6ee; color: var(--blue); }
-.pill.open { background: var(--ok); color: #fff; }
-.pill.open .dot { animation: blink 1s infinite; }
-.pill.closed { background: var(--red); color: #fff; }
-.pill.revealed { background: var(--maize); color: var(--blue); }
-@keyframes blink { 50% { opacity: .2; } }
-
-.confetti { position: fixed; inset: 0; pointer-events: none; z-index: 999; }
+body { font-family: var(--font); color: var(--ink); background: var(--blue); -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; cursor: pointer; }
+.num { font-family: var(--num); font-variant-numeric: tabular-nums; }
+.maize { color: var(--maize); }
+.blockm { display: inline-block; aspect-ratio: 120 / 86; background: url('blockm.svg') center / contain no-repeat; }

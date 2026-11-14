@@ -1,8 +1,8 @@
-// "Hail to the Two-Thirds": a live Keynesian beauty contest, Michigan style.
+// "Go Blue, Guess Low": the two-thirds-of-the-average game, Michigan edition.
 //
-// One room, one round at a time, everything in memory.
-//   Phones     /play (and /)  poll GET /api/me, POST /api/join and /api/guess
-//   Projector  /teacher       polls GET /api/room; runs the round with POST /api/admin/:action
+// One room, one round at a time, all state in memory.
+//   Phones     /play (and /)  GET /api/me, POST /api/join, POST /api/guess
+//   Projector  /teacher       GET /api/room; runs the round with POST /api/admin/:action
 //                             (teacher key in the x-teacher-key header)
 'use strict';
 
@@ -12,27 +12,27 @@ const QRCode = require('qrcode');
 
 const TEACHER_KEY = process.env.TEACHER_KEY || 'go-blue';
 const APP_URL = (process.env.APP_URL || '').replace(/\/+$/, '');
-const MAX_PLAYERS = 5000;
+const MAX_PLAYERS = 3000;
 const PUB = path.join(__dirname, 'public');
 
 const router = express.Router();
 router.use(express.json({ limit: '4kb' }));
 
-/* ------------------------------------------------------------------ state */
+/* ---------------------------------------------------------------- state */
 
 const room = {
   round: 1,
-  status: 'lobby', // lobby -> open -> closed (stage 0..3) -> revealed (stage 4)
-  stage: 0, //        1 = histogram, 2 = average, 3 = target, 4 = winner
+  phase: 'lobby', // lobby -> open -> closed -> revealed
   players: new Map(), // pid -> { name, school, guess, at, bot }
-  result: null, //    frozen when guessing closes
-  history: [], //     [{ round, n, mean, target, winner }]
-  ticker: [], //      latest names to lock in (never their numbers)
+  result: null, // computed when guessing closes
+  history: [], // [{ round, n, mean, target, winners }]
+  feed: [], // most recent names to lock in (never their numbers)
+  openedAt: null,
 };
 
-/* --------------------------------------------------------------- cleaning */
+/* -------------------------------------------------------------- helpers */
 
-const NAUGHTY = /(f+u+c+k|sh[i1]t|c+u+n+t|n[i1]gg|f[a@]gg|b[i1]tch|wh[o0]re|slut|rap(e|ist)|nazi|hitler|a+ss+h[o0]le|porn|d[i1]ck|pen[i1]s|vag[i1]na|cum\b)/i;
+const BLOCKLIST = /(f+u+c+k|sh[i1]t|c+u+n+t|n[i1]gg|f[a@]gg|b[i1]tch|wh[o0]re|slut|rap(e|ist)|nazi|hitler|a+ss+h[o0]le|porn|d[i1]ck|pen[i1]s|vag[i1]na|\bcum\b)/i;
 
 function clean(v, max) {
   const s = String(v == null ? '' : v)
@@ -41,135 +41,111 @@ function clean(v, max) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, max);
-  return NAUGHTY.test(s) ? '' : s;
+  return BLOCKLIST.test(s) ? '' : s;
 }
-const cleanPid = (v) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v || '')) ? String(v) : null);
+const okPid = (v) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v || '')) ? String(v) : null);
 
-// Accepts 33, "33", "33.3" or "33,3". Two decimals at most. null when out of range.
+// Accepts 33, "33", "33.3" or "33,3"; keeps two decimals; null if not in [0, 100].
 function parseGuess(v) {
   const raw = String(v == null ? '' : v).trim().replace(',', '.');
-  if (!raw || !/^\d*\.?\d*$/.test(raw)) return null;
+  if (!raw || !/^\d*\.?\d*$/.test(raw) || raw === '.') return null;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || n > 100) return null;
   return Math.round(n * 100) / 100;
 }
 
-const MASCOTS = ['Wolverine', 'Badger', 'Gopher', 'Hawkeye', 'Wildcat', 'Spartan', 'Terrapin', 'Boilermaker', 'Hoosier', 'Cornhusker', 'Nittany Lion', 'Bruin', 'Trojan', 'Duck', 'Husky', 'Scarlet Knight'];
-const anonName = () => `Anonymous ${MASCOTS[Math.floor(Math.random() * MASCOTS.length)]} ${Math.floor(10 + Math.random() * 89)}`;
-
-/* ----------------------------------------------------------------- levels */
-
-// Level 0 guesses at random (average 50). Level k best-responds to a room of
-// level k-1 players, so guesses 50 * (2/3)^k. Bands split halfway between levels.
-const LEVEL_VALUES = [50, 100 / 3, 200 / 9, 400 / 27, 800 / 81];
-function levelOf(g) {
-  if (g > 200 / 3 + 1e-9) return 'dom';
-  if (g <= 1) return 'nash';
-  for (let k = 0; k < LEVEL_VALUES.length - 1; k++) {
-    if (g > (LEVEL_VALUES[k] + LEVEL_VALUES[k + 1]) / 2) return `L${k}`;
-  }
-  return g > (LEVEL_VALUES[4] + LEVEL_VALUES[4] * 2 / 3) / 2 ? 'L4' : 'L5';
-}
-const LEVEL_KEYS = ['dom', 'L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'nash'];
-
-/* ---------------------------------------------------------------- scoring */
+const ANIMALS = ['Wolverine', 'Badger', 'Gopher', 'Hawkeye', 'Wildcat', 'Spartan', 'Terrapin', 'Boilermaker', 'Hoosier', 'Cornhusker', 'Nittany Lion', 'Bruin', 'Trojan', 'Duck', 'Husky'];
+const anonName = () => `Anonymous ${ANIMALS[Math.floor(Math.random() * ANIMALS.length)]} ${10 + Math.floor(Math.random() * 90)}`;
 
 const r2 = (x) => Math.round(x * 100) / 100;
+
+/* --------------------------------------------------------------- level-k */
+
+// Level 0 picks at random (average 50). Level k best-responds to a room of
+// level k-1 players: 50 * (2/3)^k. Each band runs halfway to its neighbours.
+const LEVELS = [0, 1, 2, 3, 4].map((k) => 50 * Math.pow(2 / 3, k)); // 50, 33.3, 22.2, 14.8, 9.9
+function levelOf(g) {
+  if (g > 200 / 3 + 1e-9) return 'dom'; // can never win
+  if (g < 2) return 'nash'; // zero, or near enough
+  for (let k = 0; k < LEVELS.length - 1; k++) {
+    if (g >= (LEVELS[k] + LEVELS[k + 1]) / 2) return `L${k}`;
+  }
+  return 'L4+';
+}
+const LEVEL_KEYS = ['dom', 'L0', 'L1', 'L2', 'L3', 'L4+', 'nash'];
+
+/* --------------------------------------------------------------- scoring */
 
 function computeResult() {
   const rows = [...room.players.entries()]
     .filter(([, p]) => p.guess != null)
-    .map(([pid, p]) => ({ pid, name: p.name, school: p.school, guess: p.guess, bot: !!p.bot }));
+    .map(([pid, p]) => ({ pid, name: p.name, school: p.school, guess: p.guess, at: p.at, bot: !!p.bot }));
   const n = rows.length;
-  if (!n) return { n: 0, guesses: [], winners: [], levels: {}, ranks: {} };
+  if (!n) return { n: 0, guesses: [], winners: [], levels: {} };
 
   const sum = rows.reduce((s, r) => s + r.guess, 0);
   const mean = sum / n;
   const target = (2 / 3) * mean;
-  rows.forEach((r) => { r.dist = Math.abs(r.guess - target); });
-  rows.sort((a, b) => a.dist - b.dist);
+  for (const r of rows) r.dist = Math.abs(r.guess - target);
+  rows.sort((a, b) => a.dist - b.dist || a.at - b.at);
+  const best = rows[0].dist;
+  const winners = rows.filter((r) => r.dist - best < 1e-9);
 
-  // Competition ranking: ties share a place.
-  const ranks = {};
+  // rank = 1 + number of players strictly closer (ties share a rank)
+  let rank = 0;
+  let prev = -1;
   rows.forEach((r, i) => {
-    r.rank = i > 0 && Math.abs(r.dist - rows[i - 1].dist) < 1e-9 ? rows[i - 1].rank : i + 1;
-    ranks[r.pid] = r.rank;
+    if (Math.abs(r.dist - prev) > 1e-9) rank = i + 1;
+    r.rank = rank;
+    prev = r.dist;
   });
 
   const sorted = rows.map((r) => r.guess).sort((a, b) => a - b);
   const median = n % 2 ? sorted[(n - 1) / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2;
-
   const levels = Object.fromEntries(LEVEL_KEYS.map((k) => [k, 0]));
-  rows.forEach((r) => { levels[levelOf(r.guess)] += 1; });
-
-  const winners = rows.filter((r) => r.rank === 1).map((r) => ({ name: r.name, school: r.school, guess: r.guess, bot: r.bot }));
+  for (const r of rows) levels[levelOf(r.guess)]++;
 
   return {
     n,
     sum: r2(sum),
     mean: r2(mean),
     target: r2(target),
+    exactTarget: target,
     median: r2(median),
     min: sorted[0],
     max: sorted[n - 1],
-    zeros: sorted.filter((g) => g === 0).length,
-    hundreds: sorted.filter((g) => g === 100).length,
-    winDist: r2(rows[0].dist),
-    winners,
+    zeros: rows.filter((r) => r.guess === 0).length,
+    hundreds: rows.filter((r) => r.guess === 100).length,
     levels,
-    guesses: sorted,
-    // How many steps of reasoning would a room of identical thinkers need to produce this average?
     impliedK: mean > 0 && mean < 50 ? r2(Math.log(mean / 50) / Math.log(2 / 3)) : mean >= 50 ? 0 : null,
-    ranks,
-    byPid: Object.fromEntries(rows.map((r) => [r.pid, { guess: r.guess, dist: r2(r.dist), rank: r.rank }])),
+    guesses: sorted,
+    winners: winners.map((w) => ({ name: w.name, school: w.school, guess: w.guess, bot: w.bot })),
+    ranks: Object.fromEntries(rows.map((r) => [r.pid, { rank: r.rank, dist: r2(r.dist) }])),
   };
 }
 
 /* ----------------------------------------------------------------- robots */
 
-// Rehearsal players. Roughly the mix you see in a first-time room, and they
-// learn a little each round, which is more than can be said for some offenses.
-function robotGuess(round) {
+const BOT_NAMES = ['RoboWolverine', 'Transfer Portal Bot', 'Botty Schembechler', 'Hash Equilibrium', 'Level-3 Larry', 'Nash Gordon', 'Zero Cool', 'Randy Random', 'Keynes-o-Tron', 'Fielding H. Bot', 'The Big House AI', 'Diag Squirrel', 'Punt Formation', 'Fourth & Long', 'GPU Go Blue', 'Maize Runner', 'Blue Screen', 'Two-Thirds Tom', 'Rational Rita', 'Bayes Wolverine'];
+function botGuess() {
   const u = Math.random();
-  const jitter = (sd) => (Math.random() + Math.random() + Math.random() - 1.5) * sd * 1.4;
+  const jitter = () => (Math.random() - 0.5) * 6;
   let g;
-  if (u < 0.12) g = Math.random() * 100;
-  else if (u < 0.3) g = 50 + jitter(8);
-  else if (u < 0.55) g = 33 + jitter(4);
-  else if (u < 0.75) g = 22 + jitter(3);
-  else if (u < 0.85) g = 15 + jitter(2);
-  else if (u < 0.92) g = 9 + jitter(2);
-  else g = Math.random() * 2;
-  g *= Math.pow(0.6, round - 1);
-  return Math.round(Math.min(100, Math.max(0, g)));
-}
-const ROBOT_NAMES = ['Robo-Bo', 'HAL 9000-Yard Rusher', 'Botty McBotface', 'R2-D2/3', 'The Terminator (of drives)', 'Clippy', 'Deep Blue (and Maize)', 'Wall-E', 'Bender', 'Data', 'Optimus Prime Rate', 'Marvin the Paranoid', 'Johnny 5', 'Robo-Keynes', 'Nash-bot', 'Level-k Larry', 'Rosie', 'K-2SO', 'Baymax', 'Sonny'];
-
-/* ---------------------------------------------------------------- helpers */
-
-const isAdmin = (req) => String(req.get('x-teacher-key') || '') === TEACHER_KEY;
-const counts = () => {
-  let joined = 0, guessed = 0, bots = 0;
-  for (const p of room.players.values()) {
-    joined += 1;
-    if (p.guess != null) guessed += 1;
-    if (p.bot) bots += 1;
-  }
-  return { joined, guessed, bots };
-};
-const joinUrl = (req) => `${APP_URL || `${req.protocol}://${req.get('host')}`}/play`;
-
-function closeGuessing() {
-  room.status = 'closed';
-  room.stage = 0;
-  room.result = computeResult();
+  if (u < 0.12) g = Math.random() * 100; // level 0
+  else if (u < 0.3) g = 50 + jitter();
+  else if (u < 0.55) g = 33 + jitter();
+  else if (u < 0.75) g = 22 + jitter();
+  else if (u < 0.87) g = 14 + jitter();
+  else if (u < 0.94) g = Math.random() * 3; // Nash-ish
+  else g = 67 + Math.random() * 33; // dominated
+  return Math.max(0, Math.min(100, Math.round(g)));
 }
 
-/* ----------------------------------------------------------------- routes */
+/* ------------------------------------------------------------------ pages */
 
-const page = (file) => (req, res) => {
+const page = (f) => (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.sendFile(path.join(PUB, file));
+  res.sendFile(path.join(PUB, f));
 };
 router.get('/', page('play.html'));
 router.get('/play', page('play.html'));
@@ -177,139 +153,186 @@ router.get('/teacher', page('teacher.html'));
 router.get('/healthz', (req, res) => res.json({ ok: true }));
 router.use(express.static(PUB, { maxAge: 0, index: false }));
 
+function joinUrl(req) {
+  const base = APP_URL || `${req.protocol}://${req.get('host')}${req.baseUrl}`;
+  return `${base}/play`;
+}
+router.get('/api/join-url', (req, res) => res.json({ url: joinUrl(req) }));
 router.get('/qr.svg', async (req, res) => {
   try {
-    const svg = await QRCode.toString(joinUrl(req), {
-      type: 'svg', margin: 1, errorCorrectionLevel: 'M',
-      color: { dark: '#00274C', light: '#FFFFFF' },
-    });
-    res.set('Content-Type', 'image/svg+xml').set('Cache-Control', 'no-store').send(svg);
+    const svg = await QRCode.toString(joinUrl(req), { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#00274C', light: '#FFFFFF' } });
+    res.type('image/svg+xml').set('Cache-Control', 'no-store').send(svg);
   } catch (e) {
-    res.status(500).send('QR trouble');
+    res.status(500).send('QR failed');
   }
 });
 
-// A phone's view of the world.
+/* ------------------------------------------------------------- phone API */
+
 router.get('/api/me', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const pid = cleanPid(req.query.pid);
-  const me = pid && room.players.get(pid);
-  const out = {
-    round: room.round,
-    status: room.status,
-    joined: !!me,
-    name: me ? me.name : null,
-    school: me ? me.school : null,
-    guess: me ? me.guess : null,
-    count: counts().guessed,
-  };
-  if (room.status === 'revealed' && room.result && room.result.n) {
+  const pid = okPid(req.query.pid);
+  const p = pid && room.players.get(pid);
+  const out = { phase: room.phase, round: room.round, joined: !!p };
+  if (p) {
+    out.name = p.name;
+    out.school = p.school;
+    out.guess = p.guess;
+  }
+  if (room.phase === 'revealed' && room.result && room.result.n) {
     const R = room.result;
-    const mine = pid && R.byPid[pid];
-    out.result = {
-      n: R.n, mean: R.mean, target: R.target, winners: R.winners, winDist: R.winDist,
-      me: mine ? { ...mine, level: levelOf(mine.guess), won: mine.rank === 1 } : null,
-    };
+    out.result = { n: R.n, mean: R.mean, target: R.target, winners: R.winners.map((w) => ({ name: w.name, guess: w.guess })) };
+    if (p && R.ranks[pid]) {
+      out.mine = { ...R.ranks[pid], guess: p.guess, level: levelOf(p.guess), won: R.ranks[pid].rank === 1 };
+    }
   }
   res.json(out);
 });
 
 router.post('/api/join', (req, res) => {
-  const pid = cleanPid(req.body && req.body.pid);
-  if (!pid) return res.status(400).json({ error: 'Your phone forgot who it is. Reload the page?' });
-  const existing = room.players.get(pid);
-  if (!existing && room.players.size >= MAX_PLAYERS) return res.status(429).json({ error: 'The Big House holds 107,601. This game holds fewer. We are full.' });
-  const name = clean(req.body.name, 24) || (existing && existing.name) || anonName();
+  const pid = okPid(req.body && req.body.pid);
+  if (!pid) return res.status(400).json({ error: 'Bad player id. Try reloading the page.' });
+  let p = room.players.get(pid);
+  if (!p && room.players.size >= MAX_PLAYERS) return res.status(503).json({ error: 'The Big House is full. (First time all season.)' });
+  const name = clean(req.body.name, 24) || (p && p.name) || anonName();
   const school = clean(req.body.school, 40);
-  if (existing) Object.assign(existing, { name, school });
-  else room.players.set(pid, { name, school, guess: null, at: 0, bot: false });
-  res.json({ ok: true, name });
+  if (!p) {
+    p = { name, school, guess: null, at: null, bot: false };
+    room.players.set(pid, p);
+  } else {
+    p.name = name;
+    p.school = school;
+  }
+  res.json({ ok: true, name: p.name, school: p.school });
 });
 
 router.post('/api/guess', (req, res) => {
-  const pid = cleanPid(req.body && req.body.pid);
-  const me = pid && room.players.get(pid);
-  if (!me) return res.status(400).json({ error: 'Join the game first.' });
-  if (room.status !== 'open') {
-    return res.status(409).json({ error: room.status === 'lobby' ? 'Guessing isn’t open yet. Hold that thought.' : 'Too late. The whistle has blown.' });
-  }
+  const pid = okPid(req.body && req.body.pid);
+  const p = pid && room.players.get(pid);
+  if (!p) return res.status(400).json({ error: 'Please join first.' });
+  if (room.phase !== 'open') return res.status(409).json({ error: room.phase === 'lobby' ? 'Guessing has not opened yet. Patience, grasshopper.' : 'Too late! The whistle has blown.' });
   const g = parseGuess(req.body.guess);
   if (g == null) return res.status(400).json({ error: 'Pick a number from 0 to 100.' });
-  const first = me.guess == null;
-  me.guess = g;
-  me.at = Date.now();
+  const first = p.guess == null;
+  p.guess = g;
+  p.at = Date.now();
   if (first) {
-    room.ticker.push(me.name);
-    if (room.ticker.length > 12) room.ticker.shift();
+    room.feed.unshift(p.name);
+    room.feed.length = Math.min(room.feed.length, 14);
   }
   res.json({ ok: true, guess: g });
 });
 
-// The projector's view of the world.
+/* ---------------------------------------------------------- projector API */
+
+function counts() {
+  let guessed = 0;
+  let bots = 0;
+  const schools = new Map();
+  for (const p of room.players.values()) {
+    if (p.guess != null) guessed++;
+    if (p.bot) bots++;
+    if (p.school) {
+      const k = p.school.toLowerCase();
+      const e = schools.get(k) || { name: p.school, n: 0 };
+      e.n++;
+      schools.set(k, e);
+    }
+  }
+  return {
+    joined: room.players.size,
+    guessed,
+    bots,
+    schools: [...schools.values()].sort((a, b) => b.n - a.n).slice(0, 24),
+  };
+}
+
 router.get('/api/room', (req, res) => {
   res.set('Cache-Control', 'no-store');
-  const c = counts();
-  const out = {
-    round: room.round,
-    status: room.status,
-    stage: room.stage,
-    ...c,
-    ticker: room.ticker.slice(-8),
-    history: room.history,
-    joinUrl: joinUrl(req),
-    admin: isAdmin(req),
-  };
-  if ((room.status === 'closed' || room.status === 'revealed') && room.result) {
-    const { ranks, byPid, ...pub } = room.result;
+  const out = { phase: room.phase, round: room.round, ...counts(), feed: room.feed, history: room.history };
+  if ((room.phase === 'closed' || room.phase === 'revealed') && room.result) {
+    const { ranks, exactTarget, ...pub } = room.result; // ranks are per-player; keep them on the phones
     out.result = pub;
   }
   res.json(out);
 });
 
-router.post('/api/admin/:action', (req, res) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: 'That is the teacher’s whistle.' });
-  const a = req.params.action;
-  if (a === 'check') return res.json({ ok: true });
-
-  if (a === 'open') {
-    if (room.status === 'closed' || room.status === 'revealed') return res.status(409).json({ error: 'Start a new round first.' });
-    room.status = 'open';
-  } else if (a === 'close') {
-    if (room.status !== 'open') return res.status(409).json({ error: 'Guessing isn’t open.' });
-    closeGuessing();
-  } else if (a === 'reveal') {
-    if (room.status === 'lobby') return res.status(409).json({ error: 'Nothing to reveal yet.' });
-    if (room.status === 'open') closeGuessing();
-    if (room.stage < 4) room.stage += 1;
-    if (room.stage === 4 && room.status !== 'revealed') {
-      room.status = 'revealed';
-      const R = room.result;
-      if (R && R.n) room.history.push({ round: room.round, n: R.n, mean: R.mean, target: R.target, winner: R.winners[0].guess });
+const actions = {
+  open() {
+    if (room.phase === 'lobby' || room.phase === 'closed') {
+      room.phase = 'open';
+      room.result = null;
+      room.openedAt = Date.now();
     }
-  } else if (a === 'replay') {
-    if (room.status === 'revealed' || room.status === 'closed') room.stage = 1;
-  } else if (a === 'newround') {
+  },
+  close() {
+    if (room.phase === 'open') {
+      room.phase = 'closed';
+      room.result = computeResult();
+    }
+  },
+  reveal() {
+    if (room.phase === 'open') actions.close();
+    if (room.phase === 'closed') {
+      room.phase = 'revealed';
+      const R = room.result;
+      if (R && R.n && !room.history.some((h) => h.round === room.round)) {
+        room.history.push({ round: room.round, n: R.n, mean: R.mean, target: R.target, winners: R.winners.map((w) => w.name) });
+      }
+    }
+  },
+  next() {
+    // a new round: keep names, clear guesses, send the robots home
     for (const [pid, p] of room.players) {
       if (p.bot) room.players.delete(pid);
-      else { p.guess = null; p.at = 0; }
+      else {
+        p.guess = null;
+        p.at = null;
+      }
     }
-    if (room.status === 'revealed' || room.status === 'closed') room.round += 1;
-    Object.assign(room, { status: 'lobby', stage: 0, result: null, ticker: [] });
-  } else if (a === 'reset') {
-    Object.assign(room, { round: 1, status: 'lobby', stage: 0, result: null, history: [], ticker: [] });
+    room.round++;
+    room.phase = 'lobby';
+    room.result = null;
+    room.feed = [];
+  },
+  bots() {
+    const n = 25;
+    for (let i = 0; i < n && room.players.size < MAX_PLAYERS; i++) {
+      const pid = `bot_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const name = `${BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]} ${Math.floor(Math.random() * 99) + 1}`;
+      const guess = room.phase === 'open' ? botGuess() : null;
+      room.players.set(pid, { name, school: 'Robot U.', guess, at: guess == null ? null : Date.now() + i, bot: true });
+      if (guess != null) room.feed.unshift(name);
+    }
+    room.feed.length = Math.min(room.feed.length, 14);
+  },
+  reset() {
     room.players.clear();
-  } else if (a === 'robots') {
-    if (room.status === 'closed' || room.status === 'revealed') return res.status(409).json({ error: 'Robots only play before the whistle.' });
-    for (let i = 0; i < 25; i++) {
-      const pid = `bot_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-      const name = `${ROBOT_NAMES[Math.floor(Math.random() * ROBOT_NAMES.length)]} #${Math.floor(Math.random() * 900 + 100)}`;
-      room.players.set(pid, { name, school: 'Robot U', guess: robotGuess(room.round), at: Date.now(), bot: true });
+    room.round = 1;
+    room.phase = 'lobby';
+    room.result = null;
+    room.history = [];
+    room.feed = [];
+  },
+};
+
+router.post('/api/admin/:action', (req, res) => {
+  if (req.get('x-teacher-key') !== TEACHER_KEY) return res.status(403).json({ error: 'Wrong teacher key.' });
+  const fn = actions[req.params.action];
+  if (!fn) return res.status(404).json({ error: 'Unknown action.' });
+  fn();
+  // robots added while guessing is open should pick right away (handled above);
+  // robots added in the lobby pick when guessing opens:
+  if (req.params.action === 'open') {
+    for (const p of room.players.values()) {
+      if (p.bot && p.guess == null) { p.guess = botGuess(); p.at = Date.now(); room.feed.unshift(p.name); }
     }
-  } else {
-    return res.status(404).json({ error: 'Unknown play call.' });
+    room.feed.length = Math.min(room.feed.length, 14);
   }
-  res.json({ ok: true, status: room.status, stage: room.stage });
+  res.json({ ok: true, phase: room.phase, round: room.round });
 });
+
+router.get('/api/check-key', (req, res) => res.json({ ok: req.get('x-teacher-key') === TEACHER_KEY }));
 
 module.exports = router;
 module.exports.levelOf = levelOf;

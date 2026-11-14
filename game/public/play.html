@@ -1,116 +1,79 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#00274C">
-  <title>Hail to the Two-Thirds</title>
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="brand.css">
-  <link rel="stylesheet" href="play.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#00274C">
+<title>Go Blue, Guess Low</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="brand.css">
+<link rel="stylesheet" href="play.css">
 </head>
 <body>
-  <header class="top wing-stripes">
-    <span class="blockm" aria-hidden="true"></span>
-    <div class="titles">
-      <div class="kicker">The &#8532; Game</div>
-      <div class="title">Hail to the Two-Thirds</div>
-    </div>
-    <span id="status" class="pill lobby"><span class="dot"></span><span>Pregame</span></span>
-  </header>
+<header class="top">
+  <span class="blockm" aria-hidden="true"></span>
+  <div>
+    <div class="kicker">The ⅔ Game · Michigan Edition</div>
+    <h1>Go Blue, Guess Low</h1>
+  </div>
+</header>
 
-  <main id="app" aria-live="polite"></main>
+<main>
+  <!-- 1. Join -->
+  <section id="s-join" class="card" hidden>
+    <h2>How it works</h2>
+    <ol class="rules">
+      <li>Pick a number from <b>0 to 100</b>.</li>
+      <li>We average everyone's numbers.</li>
+      <li>Whoever is closest to <b>⅔ of the average</b> wins.</li>
+    </ol>
+    <p class="fine">Ties share the glory. Decimals are allowed. Prizes are mostly bragging rights, which is more than Michigan football has this year.</p>
+    <form id="join-form" autocomplete="off">
+      <label>Your nickname
+        <input id="name" maxlength="24" placeholder="e.g. The Invisible Hand" required>
+      </label>
+      <label>Your school <span class="opt">(optional)</span>
+        <input id="school" maxlength="40" placeholder="e.g. Michigan (or somewhere less fun)">
+      </label>
+      <p id="school-quip" class="quip" hidden></p>
+      <button class="big" type="submit">Join the game</button>
+      <p id="join-err" class="err" role="alert"></p>
+    </form>
+  </section>
 
-  <footer class="foot">Go Blue. Pick wisely. <span id="who"></span></footer>
+  <!-- 2. Play -->
+  <section id="s-play" hidden>
+    <div class="who">Playing as <b id="me-name"></b> <button id="rename" class="link" type="button">change</button></div>
 
-  <template id="t-join">
-    <section class="card">
-      <h1>Welcome to the Big House of game theory</h1>
-      <div class="rules">
-        <div class="rule"><b>1</b><span>Pick a number from <strong>0 to 100</strong>.</span></div>
-        <div class="rule"><b>2</b><span>We average everyone&rsquo;s numbers, and take <strong>&#8532; of that average</strong>.</span></div>
-        <div class="rule"><b>3</b><span>Whoever is <strong>closest to &#8532; of the average</strong> wins. Glory. Bragging rights. No NIL money.</span></div>
-      </div>
-      <form id="join-form" autocomplete="off">
-        <label for="name">Your nickname (it may appear on the big screen)</label>
-        <input id="name" maxlength="24" placeholder="e.g. Keynes&rsquo;s Biggest Fan" autocomplete="nickname" enterkeyhint="next">
-        <label for="school">Your school <span class="opt">(optional, for interschool trash talk)</span></label>
-        <input id="school" maxlength="40" placeholder="e.g. Michigan (condolences accepted)" list="schools" enterkeyhint="go">
-        <datalist id="schools">
-          <option>Michigan</option><option>Ohio State</option><option>Michigan State</option><option>Harvard</option><option>Stanford</option><option>Wisconsin</option><option>Notre Dame</option><option>A school we&rsquo;ll beat next year</option>
-        </datalist>
-        <button class="big" type="submit">Take the field</button>
-        <p class="err" id="join-err" role="alert"></p>
-      </form>
-    </section>
-  </template>
+    <div id="banner" class="banner"></div>
 
-  <template id="t-wait">
-    <section class="card center">
-      <div class="huddle" aria-hidden="true">
-        <span></span><span></span><span></span><span></span><span></span>
-      </div>
-      <h1>You&rsquo;re in, <span data-name></span>!</h1>
-      <p class="lede">We&rsquo;re in the huddle. Guessing opens when the professor blows the whistle.</p>
-      <p class="hint">While you wait: what do you think everyone <em>else</em> will pick?</p>
-      <p class="joke" data-joke></p>
-    </section>
-  </template>
-
-  <template id="t-guess">
-    <section class="card">
-      <h1>Your guess</h1>
-      <p class="lede">Closest to <strong>&#8532; of the average</strong> wins. You can change your mind until the whistle.</p>
+    <div id="guess-card" class="card" hidden>
+      <div class="target-line">Closest to <b>⅔ of the average</b> wins</div>
       <form id="guess-form" autocomplete="off">
-        <div class="numwrap">
-          <input id="guess" class="num" inputmode="decimal" placeholder="?" aria-label="Your guess, 0 to 100" maxlength="6" enterkeyhint="send">
+        <div class="dial">
+          <input id="guess" inputmode="decimal" aria-label="Your guess" placeholder="?" maxlength="6">
         </div>
-        <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Slide to pick a number">
-        <div class="scale"><span>0</span><span>50</span><span>100</span></div>
-        <button class="big" type="submit" id="lock">Lock it in</button>
-        <p class="err" id="guess-err" role="alert"></p>
+        <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Guess slider">
+        <div class="ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        <button id="lock" class="big" type="submit">Lock it in</button>
+        <p id="guess-err" class="err" role="alert"></p>
       </form>
-      <div class="locked" id="locked" hidden>
-        <div class="locked-label">Locked in</div>
-        <div class="locked-num" data-guess></div>
-        <p>Change it above any time before the whistle. <span data-count></span></p>
-      </div>
-      <details class="rules-mini">
-        <summary>Remind me of the rules</summary>
-        <p>Everyone picks a number from 0 to 100. We compute the average and multiply by &#8532;. Closest to that number wins. Ties share the glory.</p>
-      </details>
-    </section>
-  </template>
+      <p id="locked" class="locked" hidden></p>
+    </div>
 
-  <template id="t-closed">
-    <section class="card center">
-      <div class="whistle" aria-hidden="true">&#127944;</div>
-      <h1>The whistle has blown</h1>
-      <p class="lede" data-mine></p>
-      <p class="hint">Eyes on the big screen. The officials are reviewing the play.</p>
-      <p class="joke" data-joke></p>
-    </section>
-  </template>
+    <div id="result-card" class="card result" hidden></div>
 
-  <template id="t-results">
-    <section class="card result">
-      <div class="banner" data-banner></div>
-      <div class="facts">
-        <div><span>Average guess</span><b data-mean></b></div>
-        <div class="hot"><span>&#8532; of the average</span><b data-target></b></div>
-        <div><span>Your guess</span><b data-guess></b></div>
-        <div><span>Your finish</span><b data-rank></b></div>
-      </div>
-      <p class="winners" data-winners></p>
-      <div class="level">
-        <div class="level-tag" data-level></div>
-        <p data-level-blurb></p>
-      </div>
-      <p class="hint">Stay tuned: the professor is about to explain what just happened.</p>
-    </section>
-  </template>
+    <details class="card hint">
+      <summary>Remind me of the rules</summary>
+      <p>Everyone picks a number from 0 to 100. Take the average of all the picks, then multiply by ⅔. Closest guess wins. You can change your guess as many times as you like until the professor blows the whistle.</p>
+    </details>
+  </section>
+</main>
 
-  <script src="shared.js"></script>
-  <script src="play.js"></script>
+<footer class="foot">Unofficial, unaffiliated, and unbeaten in the two-thirds game. Go Blue!</footer>
+
+<canvas id="confetti" aria-hidden="true"></canvas>
+<script src="confetti.js"></script>
+<script src="play.js"></script>
 </body>
 </html>
