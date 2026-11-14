@@ -1,534 +1,417 @@
-// The projector deck. Arrow keys (or a clicker) move; some slides step through before moving on.
+// The projector deck. Arrow keys (or a clicker) move; O/C/R/N/B/F run the game.
 (function () {
   'use strict';
-  const B = window.Brand;
-  const $ = (id) => document.getElementById(id);
-  const SVGNS = 'http://www.w3.org/2000/svg';
-  const LOG23 = Math.log(2 / 3);
+  const { LEVELS, JOKES, fmt, esc, confetti } = window.TT;
+  const $ = (s, el = document) => el.querySelector(s);
+  const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
-  /* ---------------------------------------------------------- teacher key */
-  function store(k, v) {
-    try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* ignore */ }
-    return null;
+  /* ------------------------------------------------------------ teacher key */
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* fine */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* fine */ } },
+  };
+  const params = new URLSearchParams(location.search);
+  if (params.has('key')) {
+    store.set('tt-key', params.get('key'));
+    params.delete('key');
+    history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : '') + location.hash);
   }
-  const url = new URL(location.href);
-  let KEY = url.searchParams.get('key') || store('t3-key') || '';
-  if (url.searchParams.has('key')) {
-    store('t3-key', KEY);
-    url.searchParams.delete('key');
-    history.replaceState(null, '', url.pathname + url.search + url.hash); // keep the key off the projector
-  }
+  let key = store.get('tt-key') || '';
 
-  /* ---------------------------------------------------------- stage scale */
-  const stage = $('stage');
+  /* ------------------------------------------------------------------ deck */
+  const slides = $$('.slide');
+  const idx = (name) => slides.findIndex((s) => s.dataset.name === name);
+  const SL = { join: idx('Join'), results: idx('Results'), math: idx('The math'), lk: idx('Level-k'), nash: idx('Nash'), why: idx('Why not zero?') };
+  let cur = Math.min(slides.length - 1, Math.max(0, parseInt(store.get('tt-slide') || '0', 10) || 0));
+  const steps = slides.map(() => 0);
+  let D = null; // latest /api/room
+  const drawn = {}; // per-chart key, so we only redraw (and re-animate) when something changed
+
   function fit() {
     const s = Math.min(innerWidth / 1600, innerHeight / 900);
-    stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+    const st = $('#stage');
+    st.style.transform = `scale(${s})`;
+    st.style.left = `${(innerWidth - 1600 * s) / 2}px`;
+    st.style.top = `${(innerHeight - 900 * s) / 2}px`;
   }
   addEventListener('resize', fit);
   fit();
 
-  for (const el of document.querySelectorAll('[data-m]')) el.innerHTML = B.blockM(Number(el.dataset.m));
-
-  /* --------------------------------------------------------------- slides */
-  const slides = [...document.querySelectorAll('.slide')];
-  const IDX = { title: 0, rules: 1, join: 2, results: 3, math: 4, lk: 5, nash: 6, why: 7, again: 8, steal: 9 };
-  const NASH_STEPS = 6; // listed eliminations before "and so on, forever"
-  const LK_ROWS = ['L0', 'L1', 'L2', 'L3', 'L4', 'nash', 'dom'];
-  const maxStep = (i) => (i === IDX.lk ? LK_ROWS.length + 1 : i === IDX.nash ? NASH_STEPS + 2 : 0);
-
-  let cur = 0;
-  let step = 0;
-  const dots = $('dots');
+  const dots = $('#dots');
   slides.forEach((s, i) => {
-    const d = document.createElement('i');
-    d.title = `${i + 1}. ${s.dataset.name}`;
-    d.onclick = () => go(i);
-    dots.appendChild(d);
+    const b = document.createElement('button');
+    b.title = `${i + 1}. ${s.dataset.name}`;
+    b.addEventListener('click', () => go(i));
+    dots.appendChild(b);
   });
 
-  function go(i, fromBack) {
-    cur = Math.max(0, Math.min(slides.length - 1, i));
-    step = fromBack ? maxStep(cur) : maxStep(cur) ? 1 : 0;
-    slides.forEach((s, j) => s.classList.toggle('on', j === cur));
-    [...dots.children].forEach((d, j) => d.classList.toggle('on', j === cur));
-    store('t3-slide', String(cur));
-    renderSlide(true);
+  function go(i, fromEnd) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i !== cur) steps[i] = fromEnd ? (+slides[i].dataset.steps || 1) - 1 : 0;
+    cur = i;
+    store.set('tt-slide', String(i));
+    slides.forEach((s, j) => s.classList.toggle('on', j === i));
+    $$('#dots button').forEach((b, j) => b.classList.toggle('on', j === i));
+    Object.keys(drawn).forEach((k) => delete drawn[k]); // replay animations on arrival
+    render();
   }
+
   function next() {
-    if (step < maxStep(cur)) { step += 1; renderSlide(false); } else if (cur < slides.length - 1) go(cur + 1);
+    const n = +slides[cur].dataset.steps || 1;
+    if (cur === SL.results && D && D.admin && (D.status === 'closed' || D.status === 'revealed') && D.stage < 4) return act('reveal');
+    if (steps[cur] < n - 1) { steps[cur] += 1; return render(); }
+    go(cur + 1);
   }
   function prev() {
-    if (step > 1 && maxStep(cur)) { step -= 1; renderSlide(false); } else if (cur > 0) go(cur - 1, true);
+    if (steps[cur] > 0) { steps[cur] -= 1; return render(); }
+    go(cur - 1, true);
   }
 
-  /* -------------------------------------------------------------- network */
-  let D = null; // deck state
-  let lastV = -1;
-  async function api(path, body) {
-    const opts = { cache: 'no-store', headers: { 'x-teacher-key': KEY } };
-    if (body !== undefined) {
-      opts.method = 'POST';
-      opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body);
-    }
-    const r = await fetch(path, opts);
+  /* ---------------------------------------------------------------- server */
+  async function api(url, body) {
+    const opts = { headers: { 'x-teacher-key': key }, cache: 'no-store' };
+    if (body !== undefined) Object.assign(opts, { method: 'POST', body: JSON.stringify(body), headers: { ...opts.headers, 'Content-Type': 'application/json' } });
+    const r = await fetch(url, opts);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || 'Request failed');
+    if (!r.ok) throw new Error(j.error || 'Fumble on the server.');
     return j;
   }
-  let pollTimer;
+
+  let warnedKey = false;
   async function poll() {
-    clearTimeout(pollTimer);
     try {
-      D = await api('api/deck');
-      document.body.classList.toggle('teacher', !!D.teacher);
-      $('d-viewonly').hidden = !!D.teacher;
-      if (D.v !== lastV) { lastV = D.v; renderSlide(false); }
-      renderDock();
-    } catch (e) {
-      $('d-status').textContent = 'Reconnecting…';
-    }
-    pollTimer = setTimeout(poll, 1000);
+      D = await api('api/room');
+      document.body.classList.toggle('admin', D.admin);
+      $('#viewonly').hidden = D.admin;
+      if (key && !D.admin && !warnedKey) { warnedKey = true; toast('That teacher key didn’t work. View only.'); store.del('tt-key'); key = ''; }
+      render();
+    } catch (e) { /* the site may be waking up; keep trying */ }
+    setTimeout(poll, document.hidden ? 3000 : 1000);
   }
 
-  async function admin(action, body) {
-    if (!D || !D.teacher) return flash('View only. Add ?key=… to the address to take control.');
+  async function act(a) {
+    if (!D || !D.admin) return toast('View only: add ?key=… to the address to take control.');
+    if (a === 'reset' && !confirm('Reset everything? Everyone, every round, gone. Like our playoff hopes.')) return;
     try {
-      await api('api/admin/' + action, body || {});
-      await poll();
-      if (action === 'reveal') { animatedRound = null; go(IDX.results); }
-      if (action === 'newround') go(IDX.join);
-    } catch (e) {
-      flash(e.message);
-    }
+      await api(`api/admin/${a}`, {});
+      D = await api('api/room');
+      if (a === 'open' || a === 'newround' || a === 'reset') go(SL.join);
+      else if (a === 'reveal' || a === 'replay') { if (a === 'replay') delete drawn.res; go(SL.results); }
+      else render();
+      if (a === 'robots') toast('25 robots have entered the stadium. They also can’t block.');
+      if (a === 'close') toast('Whistle! Guessing is closed.');
+    } catch (e) { toast(e.message); }
   }
 
-  function flash(msg) {
-    const el = $('d-status');
-    el.textContent = msg;
-    showDock();
+  let toastTimer;
+  function toast(msg) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
-  /* ----------------------------------------------------------------- dock */
-  const dock = $('dock');
-  let dockTimer;
-  function showDock() {
-    dock.classList.add('show');
-    clearTimeout(dockTimer);
-    dockTimer = setTimeout(() => dock.classList.remove('show'), 3000);
-  }
-  addEventListener('mousemove', showDock);
-  function renderDock() {
-    if (!D) return;
-    const labels = { lobby: 'Pregame', open: 'OPEN', closed: 'Closed', revealed: 'Revealed' };
-    $('d-status').textContent = `Round ${D.round} · ${labels[D.status]} · ${D.locked}/${D.n} guesses${D.bots ? ` (${D.bots} robots)` : ''}`;
-    $('d-open').disabled = $('b-open').disabled = D.status === 'open' || D.status === 'revealed';
-    $('d-close').disabled = $('b-close').disabled = D.status !== 'open';
-    $('d-reveal').disabled = $('b-reveal').disabled = !(D.status === 'open' || D.status === 'closed');
-  }
+  /* ---------------------------------------------------------- field chart */
+  // Guesses 0-100 map onto a 100-yard field. The only field in Ann Arbor where we reliably go the distance.
+  const X0 = 100, X1 = 1300, YT = 60;
+  let FH = 520, YB = 440; // field height and bar baseline; the Nash chart is taller
+  const setH = (h) => { FH = h; YB = h - 80; };
+  const X = (g) => X0 + (g / 100) * (X1 - X0);
 
-  $('d-prev').onclick = prev;
-  $('d-next').onclick = next;
-  $('d-open').onclick = $('b-open').onclick = () => admin('open');
-  $('d-close').onclick = $('b-close').onclick = () => admin('close');
-  $('d-reveal').onclick = $('b-reveal').onclick = $('b-reveal2').onclick = () => admin('reveal');
-  $('d-new').onclick = $('b-new').onclick = () => admin('newround');
-  $('d-bots').onclick = () => admin('bots', { count: 25 });
-  $('d-reset').onclick = () => { if (confirm('Reset everything? All players, guesses and rounds will be cleared.')) admin('reset'); };
-  $('d-full').onclick = toggleFull;
-  function toggleFull() {
-    if (document.fullscreenElement) document.exitFullscreen();
-    else document.documentElement.requestFullscreen().catch(() => {});
+  function fieldBase() {
+    let s = '';
+    for (let i = 0; i < 20; i++) s += `<rect class="${i % 2 ? 'turf-b' : 'turf-a'}" x="${X(i * 5)}" y="0" width="${X(5) - X(0)}" height="${FH}"/>`;
+    s += `<rect class="ez-l" x="0" y="0" width="${X0}" height="${FH}"/><rect class="ez-r" x="${X1}" y="0" width="${1400 - X1}" height="${FH}"/>`;
+    s += `<text class="ez-text" fill="#FFCB05" transform="translate(64 ${FH / 2}) rotate(-90)" text-anchor="middle">MICHIGAN</text>`;
+    s += `<text class="ez-text" fill="#00274C" transform="translate(1336 ${FH / 2}) rotate(90)" text-anchor="middle">GO BLUE</text>`;
+    for (let g = 0; g <= 100; g += 10) s += `<line class="yard" x1="${X(g)}" x2="${X(g)}" y1="0" y2="${FH}"/>`;
+    for (let g = 1; g < 100; g++) if (g % 10) s += `<line class="hash" x1="${X(g)}" x2="${X(g)}" y1="${g % 5 ? FH - 20 : 0}" y2="${g % 5 ? FH - 8 : FH}"/>`;
+    for (let g = 0; g <= 100; g += 10) s += `<text class="ynum" x="${X(g)}" y="${FH - 38}">${g}</text>`;
+    return s;
   }
 
-  addEventListener('keydown', (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const k = e.key;
-    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ' || k === 'Enter') { e.preventDefault(); next(); }
-    else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'Backspace') { e.preventDefault(); prev(); }
-    else if (k === 'o' || k === 'O') admin('open');
-    else if (k === 'c' || k === 'C') admin('close');
-    else if (k === 'r' || k === 'R') {
-      if (D && D.status === 'revealed') { animatedRound = null; go(IDX.results); } else admin('reveal');
-    }
-    else if (k === 'n' || k === 'N') admin('newround');
-    else if (k === 'b' || k === 'B') admin('bots', { count: 25 });
-    else if (k === 'f' || k === 'F') toggleFull();
-    else if (/^[0-9]$/.test(k)) go(k === '0' ? 9 : Number(k) - 1);
-  });
-
-  /* ------------------------------------------------------------ SVG utils */
-  function svg(tag, attrs, parent) {
-    const el = document.createElementNS(SVGNS, tag);
-    for (const a in attrs) el.setAttribute(a, attrs[a]);
-    if (parent) parent.appendChild(el);
-    return el;
-  }
-  // The drawable size of a host box (its content box, inside the padding).
-  function box(host, fw, fh) {
-    const cs = getComputedStyle(host);
-    const w = host.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    const h = host.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-    return [w > 0 ? w : fw, h > 0 ? h : fh];
-  }
-  function text(parent, x, y, str, attrs) {
-    const t = svg('text', Object.assign({ x, y }, attrs || {}), parent);
-    t.textContent = str;
-    return t;
+  function bins(guesses, w = 2) {
+    const n = Math.ceil(100 / w), c = new Array(n).fill(0);
+    guesses.forEach((g) => { c[Math.min(n - 1, Math.floor(g / w))] += 1; });
+    return c;
   }
 
-  // A histogram of guesses on a football field: 100 one-point bins from 0 to 100.
-  function histogram(host, guesses, opts) {
-    const o = opts || {};
-    host.innerHTML = '';
-    const [W, H] = box(host, 1400, 500);
-    const padB = 52, padT = o.padTop == null ? 70 : o.padTop;
-    const plotH = H - padB - padT;
-    const s = svg('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' }, host);
-    const X = (v) => (v / 100) * W;
-
-    if (o.domShade) {
-      svg('rect', { x: X(200 / 3), y: padT - 20, width: W - X(200 / 3), height: plotH + 20, fill: 'rgba(216,96,24,.28)' }, s);
-      text(s, X(83.3), padT - 30, 'DOMINATED', { 'text-anchor': 'middle', fill: '#ffd2b8', 'font-size': 22, 'font-weight': 900, 'letter-spacing': 3 });
-    }
-    // Yard lines and numbers
-    for (let v = 0; v <= 100; v += 10) {
-      svg('line', { x1: X(v), x2: X(v), y1: padT - 10, y2: H - padB, stroke: 'rgba(255,255,255,.45)', 'stroke-width': v % 50 ? 2 : 4 }, s);
-      text(s, X(v), H - 12, String(v), { 'text-anchor': 'middle', fill: '#fff', 'font-size': 28, 'font-weight': 900, 'font-family': 'Montserrat' });
-    }
-    for (let v = 0; v < 100; v += 1) {
-      if (v % 10) svg('line', { x1: X(v), x2: X(v), y1: H - padB - 8, y2: H - padB, stroke: 'rgba(255,255,255,.35)', 'stroke-width': 1.5 }, s);
-    }
-    svg('line', { x1: 0, x2: W, y1: H - padB, y2: H - padB, stroke: '#fff', 'stroke-width': 4 }, s);
-
-    // Bars
-    const counts = new Array(100).fill(0);
-    const wins = new Array(100).fill(0);
-    for (const [g, w] of guesses) {
-      const b = Math.min(99, Math.floor(g));
-      counts[b] += 1;
-      if (w) wins[b] = 1;
-    }
-    const maxC = Math.max(1, ...counts);
-    const bw = W / 100;
-    const gBars = svg('g', { class: o.hidden ? 'bars-hidden' : '' }, s);
-    counts.forEach((c, i) => {
-      if (!c) return;
-      const h = Math.max(6, (c / maxC) * plotH);
-      const r = svg('rect', {
-        class: 'bar', x: i * bw + 1.5, y: H - padB - h, width: Math.max(2, bw - 3), height: h, rx: 3,
-        fill: wins[i] ? '#ffffff' : '#FFCB05', stroke: '#00274C', 'stroke-width': 2,
-      }, gBars);
-      r.style.transitionDelay = `${(i / 100) * 0.6}s`;
-      if (o.showCounts && c >= Math.max(2, maxC * 0.25)) text(gBars, i * bw + bw / 2, H - padB - h - 8, String(c), { 'text-anchor': 'middle', fill: '#fff', 'font-size': 18, 'font-weight': 800 });
-    });
-    host.bars = gBars;
-
-    // Vertical reference lines
-    host.lines = {};
-    (o.lines || []).forEach((L, n) => {
-      const g = svg('g', { class: 'vline' + (L.hide ? ' hide' : '') }, s);
-      const x = X(L.x);
-      svg('line', { x1: x, x2: x, y1: padT - 56 + (L.row || 0) * 42, y2: H - padB, stroke: L.color, 'stroke-width': L.width || 5, 'stroke-dasharray': L.dash || '' }, g);
-      const label = L.label;
-      const lw = label.length * 13 + 26;
-      const lx = Math.max(lw / 2, Math.min(W - lw / 2, x));
-      const ly = padT - 92 + (L.row || 0) * 42;
-      svg('rect', { x: lx - lw / 2, y: ly, width: lw, height: 36, rx: 18, fill: L.color }, g);
-      text(g, lx, ly + 25, label, { 'text-anchor': 'middle', fill: L.ink || '#00274C', 'font-size': 20, 'font-weight': 900 });
-      host.lines[L.key || n] = g;
+  function barsSvg(guesses, { winGuess = null, bound = null, animate = true } = {}) {
+    const w = 2, c = bins(guesses, w), max = Math.max(1, ...c);
+    const winBin = winGuess == null ? -1 : Math.min(c.length - 1, Math.floor(winGuess / w));
+    let s = '';
+    c.forEach((k, i) => {
+      if (!k) return;
+      const h = (k / max) * (YB - YT - 30);
+      const cls = ['bar', i === winBin ? 'win' : '', bound != null && i * w >= bound ? 'gone' : ''].join(' ');
+      s += `<rect class="${cls}" x="${X(i * w) + 2}" y="${YB - h}" width="${X(w) - X(0) - 4}" height="${h}" rx="3" style="animation-delay:${animate ? (i * 12) : 0}ms${animate ? '' : ';animation:none'}"><title>${i * w}–${i * w + w}: ${k}</title></rect>`;
     });
     return s;
   }
 
-  /* ------------------------------------------------------------- results */
-  let animatedRound = null;
-  let timers = [];
-  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
-
-  function renderResults(entering) {
-    const r = D && D.result;
-    $('r-empty').style.display = r && r.n ? 'none' : 'grid';
-    $('r-chart').style.visibility = r && r.n ? 'visible' : 'hidden';
-    if (!r || !r.n) {
-      ['st-avg', 'st-tgt'].forEach((id) => $(id).classList.add('hide'));
-      $('r-winner').classList.add('hide');
-      $('r-n').textContent = D ? D.locked : '–';
-      $('r-empty').querySelector('p').textContent = D && D.status === 'revealed' ? 'Nobody guessed this round. Bold strategy.' : 'No results yet. Guessing is ' + (D && D.status === 'open' ? 'still open.' : 'not open.');
-      return;
-    }
-    $('r-n').textContent = r.n;
-    $('r-avg').textContent = B.fmt(r.avg, 1);
-    $('r-tgt').textContent = B.fmt(r.target, 1);
-    const names = r.winners.map((w) => `${B.esc(w.name)}${w.school ? ` <small>(${B.esc(w.school)})</small>` : ''}`);
-    const more = r.winnerCount > names.length ? ` + ${r.winnerCount - names.length} more` : '';
-    const g = r.winners[0].guess;
-    $('r-winner').innerHTML = `<span class="trophy">🏆</span><span><span class="w-names">${r.winnerCount > 1 ? 'Tie! ' : ''}${names.join(', ')}${more}</span>
-      <span class="w-sub">${r.winnerCount > 1 ? 'guessed' : 'guessed'} ${B.fmtGuess(g)}, just ${B.fmt(r.winDist, 2)} from the target of ${B.fmt(r.target, 2)}. Hail to the Victor${r.winnerCount > 1 ? 's' : ''}!</span></span>`;
-
-    const animate = animatedRound !== r.round;
-    histogram($('r-chart'), r.guesses, {
-      hidden: animate, showCounts: true, padTop: 100,
-      lines: [
-        { key: 'avg', x: r.avg, label: `Average ${B.fmt(r.avg, 1)}`, color: '#ffffff', dash: '12 8', hide: animate, row: 0 },
-        { key: 'tgt', x: r.target, label: `⅔ target ${B.fmt(r.target, 1)}`, color: '#FFCB05', hide: animate, row: 1 },
-      ],
-    });
-    const chart = $('r-chart');
-    if (!animate) {
-      ['st-avg', 'st-tgt'].forEach((id) => $(id).classList.remove('hide'));
-      $('r-winner').classList.remove('hide');
-      return;
-    }
-    if (!entering && cur !== IDX.results) return;
-    animatedRound = r.round;
-    clearTimers();
-    ['st-avg', 'st-tgt'].forEach((id) => $(id).classList.add('hide'));
-    $('r-winner').classList.add('hide');
-    timers.push(setTimeout(() => chart.bars.classList.remove('bars-hidden'), 150));
-    timers.push(setTimeout(() => { $('st-avg').classList.remove('hide'); chart.lines.avg.classList.remove('hide'); }, 2000));
-    timers.push(setTimeout(() => { $('st-tgt').classList.remove('hide'); chart.lines.tgt.classList.remove('hide'); }, 3600));
-    timers.push(setTimeout(() => { $('r-winner').classList.remove('hide'); B.confetti(5000); }, 5200));
+  function lineSvg(g, cls, label, y, fill, color, delay = 0) {
+    const x = X(g);
+    const tw = Math.max(90, label.length * 14 + 26);
+    const tx = Math.min(X1 - tw / 2, Math.max(X0 + tw / 2, x));
+    return `<line class="line ${cls}" x1="${x}" x2="${x}" y1="${y + 22}" y2="${YB + 10}" style="animation-delay:${delay}ms"/>`
+      + `<g class="tag" style="animation-delay:${delay}ms"><rect x="${tx - tw / 2}" y="${y - 20}" width="${tw}" height="42" fill="${fill}"/><text x="${tx}" y="${y + 1}" fill="${color}">${esc(label)}</text></g>`;
   }
 
-  /* ---------------------------------------------------------------- math */
+  const emptySvg = (msg) => `<text class="empty" x="700" y="${FH / 2 - 10}">${esc(msg)}</text>`;
+
+  /* --------------------------------------------------------------- render */
+  function render() {
+    slides.forEach((s, j) => s.classList.toggle('on', j === cur));
+    $$('#dots button').forEach((b, j) => b.classList.toggle('on', j === cur));
+    if (!D) return;
+    const pillText = { lobby: 'Pregame', open: 'Guessing open', closed: 'Whistle', revealed: 'Final' }[D.status];
+    $$('#dock-status, #join-status').forEach((p) => { p.className = `pill ${D.status}`; p.lastElementChild.textContent = pillText; });
+    $$('[data-act]').forEach((b) => { b.disabled = !enabled(b.dataset.act); });
+    const name = slides[cur].dataset.name;
+    if (name === 'Join') renderJoin();
+    if (name === 'Results') renderResults();
+    if (name === 'The math') renderMath();
+    if (name === 'Level-k') renderLevelK();
+    if (name === 'Nash') renderNash();
+    if (name === 'Why not zero?') renderWhy();
+  }
+
+  function enabled(a) {
+    const s = D.status;
+    if (a === 'open') return s === 'lobby';
+    if (a === 'close') return s === 'open';
+    if (a === 'reveal') return s === 'open' || s === 'closed' || (s === 'revealed' && D.stage < 4);
+    if (a === 'replay') return s === 'revealed';
+    if (a === 'robots') return s === 'lobby' || s === 'open';
+    return true;
+  }
+
+  let jokeAt = 0, jokeI = Math.floor(Math.random() * JOKES.length), qrRound = null;
+  function renderJoin() {
+    if (qrRound !== 1) { $('#qr').src = 'qr.svg'; qrRound = 1; }
+    $('#join-url').textContent = D.joinUrl.replace(/^https?:\/\//, '');
+    $('#n-joined').textContent = D.joined.toLocaleString();
+    $('#n-guessed').textContent = D.guessed.toLocaleString();
+    $('#join-head').textContent = { lobby: D.round > 1 ? `Round ${D.round}: scan to play` : 'Scan to play', open: 'Guessing is open!', closed: 'Whistle! Guesses are in', revealed: 'That’s the game' }[D.status];
+    const tk = $('#ticker'), names = D.ticker.slice(-6);
+    const k = names.join('|');
+    if (tk.dataset.k !== k) { tk.dataset.k = k; tk.innerHTML = names.map((n) => `<span>&#10003; ${esc(n)}</span>`).join(''); }
+    if (Date.now() - jokeAt > 12000) { jokeAt = Date.now(); jokeI = (jokeI + 1) % JOKES.length; $('#join-joke').textContent = JOKES[jokeI]; }
+  }
+
+  let celebratedRound = null;
+  function renderResults() {
+    const R = D.result, stage = D.stage;
+    $('#res-round').textContent = `Round ${D.round}`;
+    $('#res-next').textContent = D.status === 'open' ? 'Whistle & reveal →' : ['Show the guesses →', 'Show the average →', 'Show ⅔ × average →', 'Show the winner →', 'Final'][stage] || 'Final';
+    $$('.s-results .stat').forEach((s) => s.classList.toggle('hidden', !R || stage < +s.dataset.stage));
+    const svg = $('#res-field');
+    const k = `res:${D.round}:${D.status}:${stage}:${R ? R.n : 0}:${D.guessed}`;
+    if (drawn.res === k) return;
+    const prevStage = drawn.resStage;
+    drawn.res = k; drawn.resStage = `${D.round}:${stage}`;
+    setH(520);
+    let s = fieldBase();
+    if (!R || stage < 1) {
+      s += emptySvg(D.status === 'open' ? `${D.guessed} guesses locked in. No peeking.` : D.status === 'closed' ? 'The guesses are in. Ready for the reveal?' : 'Kickoff hasn’t happened yet.');
+    } else if (!R.n) {
+      s += emptySvg('Nobody guessed. The Nash equilibrium of not showing up.');
+    } else {
+      const animateBars = !prevStage || prevStage === `${D.round}:0` || !prevStage.startsWith(`${D.round}:`) || stage === 1;
+      s += barsSvg(R.guesses, { winGuess: stage >= 4 ? R.winners[0].guess : null, animate: animateBars });
+      if (stage >= 2) s += lineSvg(R.mean, 'mean', `Average ${fmt(R.mean)}`, 30, '#ffffff', '#00274C', stage === 2 ? 0 : -1000);
+      if (stage >= 3) s += lineSvg(R.target, 'target', `⅔ × avg = ${fmt(R.target, 2)}`, 88, '#FFCB05', '#00274C', stage === 3 ? 0 : -1000);
+    }
+    svg.innerHTML = s;
+    if (R && R.n) {
+      $('#st-n').textContent = R.n.toLocaleString();
+      $('#st-mean').textContent = fmt(R.mean, 2);
+      $('#st-target').textContent = fmt(R.target, 2);
+      const W = R.winners;
+      $('#st-win-label').textContent = W.length > 1 ? `${W.length}-way tie for the win` : 'Hail to the Victor';
+      $('#st-win').textContent = W.length > 1 ? W.slice(0, 3).map((w) => w.name).join(', ') + (W.length > 3 ? '…' : '') : W[0].name;
+      $('#st-win-guess').textContent = `guessed ${fmt(W[0].guess, 2)}, off by ${fmt(R.winDist, 2)}${W.length === 1 && W[0].school ? ` · ${W[0].school}` : ''}`;
+      if (stage >= 4 && celebratedRound !== D.round) { celebratedRound = D.round; confetti(4500); }
+    }
+  }
+
+  function needResult(el) {
+    if (D.result && D.result.n && D.stage >= 1) return false;
+    el.innerHTML = '<p class="quip dark">Play a round and reveal the results first. (Or press <b>B</b> for 25 robots, then <b>R</b>.)</p>';
+    return true;
+  }
+
   function renderMath() {
-    const r = D && D.result;
-    const host = $('math');
-    if (!r || !r.n) {
-      host.innerHTML = '<div class="mstep" style="grid-column:1/-1"><h3>Nothing to add up yet</h3><p>Play a round, reveal it, then come back here to walk through the arithmetic.</p></div>';
-      $('math-note').textContent = '';
-      return;
-    }
-    const w = r.winners[0];
-    const dom = r.levels.dom;
-    host.innerHTML = `
-      <div class="mstep"><h3>1 · Add them up</h3><div class="big">${r.n}</div><p>guesses, totalling</p><div class="eq">Σ = ${B.fmt(r.sum, 1)}</div></div>
-      <div class="mstep"><h3>2 · Average</h3><div class="big">${B.fmt(r.avg, 2)}</div><p>the average guess</p><div class="eq">${B.fmt(r.sum, 1)} ÷ ${r.n}</div></div>
-      <div class="mstep"><h3>3 · Take ⅔</h3><div class="big">${B.fmt(r.target, 2)}</div><p>is the target</p><div class="eq">⅔ × ${B.fmt(r.avg, 2)}</div></div>
-      <div class="mstep final"><h3>4 · Closest wins</h3><div class="big">${B.fmtGuess(w.guess)}</div><p>${B.esc(w.name)}${r.winnerCount > 1 ? ` and ${r.winnerCount - 1} other${r.winnerCount > 2 ? 's' : ''}` : ''}</p><div class="eq">|${B.fmtGuess(w.guess)} − ${B.fmt(r.target, 2)}| = ${B.fmt(r.winDist, 2)}</div></div>
-      <div class="math-sub">
-        <div class="mini"><b>${B.fmt(r.median, 1)}</b>median guess</div>
-        <div class="mini"><b>${B.fmtGuess(r.min)} to ${B.fmtGuess(r.max)}</b>lowest to highest</div>
-        <div class="mini"><b>${dom}</b>guess${dom === 1 ? '' : 'es'} above 66.7 (can never win)</div>
-      </div>`;
-    $('math-note').textContent = dom
-      ? `${dom === 1 ? 'Someone' : dom + ' people'} guessed above 66.7. Even if everyone said 100, the target would be 66.7. That's a strictly dominated strategy, like running up the middle on 3rd and 14. (Michigan's offensive coordinator has been notified.)`
-      : 'Nobody guessed above 66.7. This room is already smarter than our play-calling.';
+    const eq = $('#math-eq');
+    if (needResult(eq)) { $('#math-facts').innerHTML = ''; $('#math-quip').textContent = ''; return; }
+    const R = D.result;
+    const box = (label, v, cls = '') => `<div class="box ${cls}"><span>${label}</span><b>${v}</b></div>`;
+    eq.innerHTML = box('Sum of guesses', fmt(R.sum, 1)) + '<span class="op">&divide;</span>' + box('Players', R.n.toLocaleString())
+      + '<span class="op">=</span>' + box('Average', fmt(R.mean, 2)) + '<span class="op">&times; &#8532; =</span>' + box('Target', fmt(R.target, 2), 'hot')
+      + '<span class="op">&rarr;</span>' + box(R.winners.length > 1 ? 'Closest guesses' : 'Closest guess', fmt(R.winners[0].guess, 2), 'win');
+    const pct = (k) => `${Math.round((100 * k) / R.n)}%`;
+    $('#math-facts').innerHTML = [
+      [fmt(R.median, 2), 'Median guess'],
+      [`${fmt(R.min)}–${fmt(R.max)}`, 'Lowest to highest'],
+      [`${R.levels.dom} <small>(${pct(R.levels.dom)})</small>`, 'Guessed above 66.7, which can never win'],
+      [`${R.zeros} <small>(${pct(R.zeros)})</small>`, 'Went straight to 0, the Nash equilibrium'],
+    ].map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('');
+    $('#math-quip').textContent = R.levels.dom > 0
+      ? `${R.levels.dom === 1 ? 'One brave soul' : `${R.levels.dom} brave souls`} guessed above 66.7. Even if everyone said 100, the target would only be 66.7. We’ll put them in charge of our clock management.`
+      : 'Nobody guessed above 66.7. This room already has better judgment than our fourth-down decisions.';
   }
 
-  /* ------------------------------------------------------------- level-k */
-  const LK_DESC = {
-    L0: 'No strategy. A random pick, or "the middle."',
-    L1: 'Thinks everyone else is Level 0. ⅔ × 50.',
-    L2: 'Thinks everyone else is Level 1. ⅔ × 33.3.',
-    L3: 'Thinks everyone else is Level 2. ⅔ × 22.2.',
-    L4: 'Keeps going: ⅔ × 14.8, and so on.',
-    nash: 'Iterates forever. Everyone says 0.',
-    dom: 'Above 66.7. Can never win, whatever others do.',
-  };
-  const LK_VAL = { L0: '50', L1: '33.3', L2: '22.2', L3: '14.8', L4: '≤ 9.9', nash: '0', dom: '> 66.7' };
-  const LK_CALL = {
-    L0: '<b>Level 0</b> doesn\'t think about anyone else. If everyone picked at random, the average would be about <b>50</b>.',
-    L1: '<b>Level 1</b> best-responds to Level 0: if the average is 50, guess <b>⅔ × 50 ≈ 33</b>.',
-    L2: '<b>Level 2</b> thinks everyone else is Level 1, so guesses <b>⅔ × 33 ≈ 22</b>.',
-    L3: '<b>Level 3</b>: ⅔ × 22 ≈ <b>15</b>. Each extra step of reasoning multiplies by another ⅔.',
-    L4: '<b>Level 4 and up</b>: 9.9, 6.6, 4.4… Level <i>k</i> guesses <b>50 × (⅔)<sup>k</sup></b>.',
-    nash: 'Take it to infinity and you hit <b>0</b>: the Nash equilibrium. Only a room full of infinitely deep thinkers gets there.',
-    dom: 'And then there are guesses above <b>66.7</b>. No belief about others can make them win. Every room has a few. So does every football program.',
-  };
+  const LADDER = [
+    ['L0', 'Doesn’t model anyone: picks at random. Average ≈ 50.'],
+    ['L1', 'Best response to Level 0: ⅔ × 50 = 33.3'],
+    ['L2', 'Best response to Level 1: ⅔ × 33.3 = 22.2'],
+    ['L3', '⅔ × 22.2 = 14.8'],
+    ['L4', '⅔ × 14.8 = 9.9'],
+    ['L5', 'Keep going… 6.6, 4.4, 2.9…'],
+    ['nash', 'Infinitely many steps: everyone says 0.'],
+    ['dom', 'Above 66.7. Never a best response.'],
+  ];
+  const LK_CALLS = [
+    'Start with a <b>Level 0</b> player who doesn’t think strategically at all. Picking at random, they average <b>50</b>.',
+    'A <b>Level 1</b> player thinks everyone else is Level 0. Best response: <b>⅔ × 50 ≈ 33</b>.',
+    'A <b>Level 2</b> player thinks everyone else is Level 1. Best response: <b>⅔ × 33 ≈ 22</b>.',
+    'Level 3 says 15. Each extra step of “I think that they think” multiplies by another ⅔.',
+    'Level 4 says 10. By now you are thinking more plays ahead than our offensive coordinator.',
+    'Level 5 and up: 6.6, 4.4, 2.9… the guesses shrink toward zero.',
+    'Take infinitely many steps and you reach <b>0</b>: the Nash equilibrium, where everyone is best-responding to everyone else.',
+    null, // computed from this room's data
+  ];
 
-  function renderLk() {
-    const r = D && D.result;
-    const n = r && r.n ? r.n : 0;
-    const shown = Math.min(step, LK_ROWS.length);
-    $('lk-ladder').innerHTML = LK_ROWS.map((k, i) => {
-      const c = n ? r.levels[k] : 0;
-      const pct = n ? (100 * c) / n : 0;
-      return `<div class="lrow ${k === 'dom' ? 'dom' : ''} ${i < shown ? '' : 'hide'}">
-        <div class="lname">${B.LEVELS[k].name === 'Nash equilibrium' ? 'Nash' : B.LEVELS[k].name}</div>
-        <div class="ldesc">${LK_DESC[k]}</div>
-        <div class="lval">${LK_VAL[k]}</div>
-        <div class="lpct">${n ? `<b>${Math.round(pct)}%</b>${c} of you` : ''}</div>
-        ${n ? `<div class="lshare"><i style="width:${i < shown ? pct : 0}%"></i></div>` : ''}
-      </div>`;
+  function renderLevelK() {
+    const step = steps[cur], R = D.result && D.result.n && D.stage >= 1 ? D.result : null;
+    $('#ladder').innerHTML = LADDER.map(([k, d], i) => {
+      const L = LEVELS[k];
+      const share = R ? `${Math.round((100 * R.levels[k]) / R.n)}%<small>of the room</small>` : '';
+      return `<li class="${k} ${i > step ? 'hidden' : ''} ${i === step ? 'cur' : ''}"><div class="lv">${L.label}<small>${L.short}</small></div><div>${d}</div><div class="share">${share}</div></li>`;
     }).join('');
 
-    const vals = { L0: 50, L1: 100 / 3, L2: 200 / 9, L3: 400 / 27, L4: 800 / 81, nash: 0 };
-    const lines = [];
-    LK_ROWS.slice(0, shown).forEach((k) => {
-      const row = { L0: 0, L1: 0, L2: 0, L3: 1, L4: 0, nash: 1 }[k];
-      if (vals[k] != null) lines.push({ x: vals[k], label: k === 'nash' ? 'Nash' : k, color: '#ffffff', ink: '#00274C', width: 3, dash: '6 6', row });
-    });
-    if (step > LK_ROWS.length && r && r.n) lines.push({ x: r.target, label: `Target ${B.fmt(r.target, 1)}`, color: '#FFCB05', row: 2 });
-    histogram($('lk-chart'), r && r.n ? r.guesses : [], { lines, domShade: shown >= LK_ROWS.length, padTop: 140 });
-
-    let call;
-    if (step > LK_ROWS.length) {
-      if (r && r.n) {
-        const kAvg = Math.log(r.avg / 50) / LOG23;
-        const kWin = Math.log(r.target / 50) / LOG23;
-        call = `This room averaged <b>${B.fmt(r.avg, 1)}</b>: as if everyone thought about <b>${B.fmt(Math.max(0, kAvg), 1)}</b> steps. The winning number, <b>${B.fmt(r.target, 1)}</b>, sits at level <b>${B.fmt(Math.max(0, kWin), 1)}</b>. To win, think exactly one step deeper than the room. Not two.`;
-      } else {
-        call = 'Play a round and this slide will show how many steps of reasoning this room actually did.';
+    let call = LK_CALLS[step];
+    if (step === 7) {
+      if (!R) call = 'Play a round to see how many steps of reasoning <b>this room</b> took.';
+      else {
+        const top = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'nash'].reduce((a, b) => (R.levels[b] > R.levels[a] ? b : a), 'L0');
+        call = R.impliedK == null ? 'Everyone said zero. This room is pure Nash, and frankly a little intimidating.'
+          : `This room averaged <b>${fmt(R.mean)}</b>: what a room of identical <b>Level ${fmt(R.impliedK)}</b> thinkers would produce. The winning move was one step beyond the crowd: <b>${fmt(R.target)}</b>. Most common type here: <b>${LEVELS[top].label}</b>.`;
       }
-    } else {
-      call = LK_CALL[LK_ROWS[Math.max(0, shown - 1)]];
     }
-    $('lk-call').innerHTML = call;
+    $('#lk-call').innerHTML = call;
+
+    const svg = $('#lk-field');
+    const k = `lk:${D.round}:${R ? R.n : 0}:${step}`;
+    if (drawn.lk === k) return;
+    const first = !drawn.lk;
+    drawn.lk = k;
+    setH(520);
+    let s = fieldBase();
+    s += R ? barsSvg(R.guesses, { animate: first }) : '';
+    const vals = [50, 100 / 3, 200 / 9, 400 / 27, 800 / 81];
+    vals.forEach((v, i) => { if (i <= step && i <= 4) s += lineSvg(v, 'level', `L${i}`, i % 2 ? 88 : 30, '#00274C', '#FFCB05', i === step ? 0 : -1000); });
+    if (step >= 6) s += lineSvg(0.6, 'target', 'Nash', 30, '#FFCB05', '#00274C', step === 6 ? 0 : -1000);
+    if (step >= 7 && R) s += lineSvg(R.mean, 'mean', `Room avg ${fmt(R.mean)}`, 146, '#ffffff', '#00274C');
+    svg.innerHTML = s;
   }
 
-  /* ---------------------------------------------------------------- nash */
+  const BOUNDS = [100, 200 / 3, 400 / 9, 800 / 27, 1600 / 81, 3200 / 243, 6400 / 729, 0];
   function renderNash() {
-    const r = D && D.result;
-    const guesses = r && r.n ? r.guesses.map((x) => x[0]) : [];
-    const k = step - 1; // eliminations done; NASH_STEPS + 1 means "forever"
-    const forever = k > NASH_STEPS;
-    const bound = forever ? 0 : 100 * Math.pow(2 / 3, Math.max(0, k));
-    const cutBy = (b) => guesses.filter((g) => g > b + 1e-9).length;
+    const step = steps[cur], R = D.result && D.result.n && D.stage >= 1 ? D.result : null;
+    const b = BOUNDS[step], prevB = BOUNDS[Math.max(0, step - 1)];
+    const surv = R ? R.guesses.filter((g) => g <= b + 1e-9).length : 0;
+    const room = R ? `<p class="small">In this room, <b>${surv}</b> of ${R.n} guesses (${Math.round((100 * surv) / R.n)}%) ${step === 7 ? 'were exactly 0' : 'survive this round'}.</p>` : '';
+    let html;
+    if (step === 0) html = '<div class="step-k">The setup</div><p>Any number from 0 to 100 is allowed. Which ones could ever be a <b>best response</b>?</p>';
+    else if (step === 1) html = '<div class="step-k">Round 1 of elimination</div><p>Even if everyone guessed 100, the target would be</p><div class="math">⅔ × 100 = 66.7</div><p>So any guess above 66.7 is <b>dominated</b>: it can never win. A rational player crosses them off.</p>';
+    else if (step === 2) html = '<div class="step-k">Round 2</div><p>If everyone is rational, nobody guesses above 66.7, so the target can be at most</p><div class="math">⅔ × 66.7 = 44.4</div><p>This step needs you to know that <i>others</i> are rational.</p>';
+    else if (step < 7) html = `<div class="step-k">Round ${step}</div><p>Knowing that they know that they know… (${step - 1} levels deep):</p><div class="math">⅔ × ${fmt(prevB)} = ${fmt(b)}</div><p class="small">${step === 6 ? 'Every round shrinks the field by a third. This is the opposite of how our defense works.' : 'Each round of reasoning needs one more layer of “and everyone knows that…”.'}</p>`;
+    else html = '<div class="step-k">Repeat forever</div><p>Only one number survives every round:</p><div class="math">0</div><p>If everyone says 0, the target is ⅔ × 0 = 0, and nobody can do better by switching. That is the <b>unique Nash equilibrium</b>.</p>';
+    $('#nash-text').innerHTML = html + room;
+    $('#bounds').innerHTML = BOUNDS.slice(0, step + 1).map((v, i) => `<span class="${i === step ? (i === 7 ? 'zero cur' : 'cur') : ''}">${i === 7 ? '0' : fmt(v)}</span>`).join('<span style="border:0;background:none">&rarr;</span>');
 
-    const rows = [];
-    rows.push(`<div class="nstep ${k === 0 ? 'cur' : ''}"><div class="k">0</div><div>Any number from 0 to 100 is possible.</div><div class="cut"></div></div>`);
-    for (let i = 1; i <= NASH_STEPS; i += 1) {
-      const b = 100 * Math.pow(2 / 3, i);
-      const prevB = 100 * Math.pow(2 / 3, i - 1);
-      const why = i === 1
-        ? `Even if everyone says 100, the target is ⅔ × 100 = <b>${B.fmt(b, 1)}</b>. Anything higher is dominated.`
-        : `If everyone knows nobody goes above ${B.fmt(prevB, 1)}, the target can't top <b>${B.fmt(b, 1)}</b>.`;
-      const c = guesses.length ? `−${cutBy(b)}` : '';
-      rows.push(`<div class="nstep ${i > k ? 'hide' : ''} ${i === k ? 'cur' : ''}"><div class="k">${i}</div><div>${why}</div><div class="cut" title="room guesses eliminated">${c}</div></div>`);
+    const svg = $('#nash-field');
+    const k = `nash:${D.round}:${R ? R.n : 0}`;
+    if (drawn.nash !== k) {
+      drawn.nash = k;
+      setH(700);
+      let s = fieldBase();
+      s += `<rect class="dead" x="${X(100)}" y="0" width="0" height="${FH}"/>`;
+      if (R) {
+        // A strip of dots, jittered by a fixed hash so they don't jump between steps.
+        R.guesses.forEach((g, i) => {
+          const y = YT + 10 + (((i * 2654435761) >>> 0) % 1000) / 1000 * (YB - YT - 20);
+          s += `<circle class="dot" data-g="${g}" cx="${X(g)}" cy="${y}" r="${R.n > 400 ? 7 : 11}"/>`;
+        });
+      } else s += emptySvg('Play a round to see the room’s guesses here.');
+      s += `<g id="bound-line"></g>`;
+      svg.innerHTML = s;
     }
-    rows.push(`<div class="nstep ${forever ? 'cur' : 'hide'}"><div class="k">∞</div><div>Keep going and only <b>0</b> survives. Everyone guesses 0: the <b>Nash equilibrium</b>.</div><div class="cut">${guesses.length ? '−' + cutBy(0) : ''}</div></div>`);
-    $('nash-steps').innerHTML = rows.join('');
-
-    // The number line
-    const host = $('nash-line');
-    host.innerHTML = '';
-    const [W, H] = box(host, 800, 400);
-    const s = svg('svg', { viewBox: `0 0 ${W} ${H}` }, host);
-    const X = (v) => (v / 100) * W;
-    const base = H - 50;
-    svg('rect', { x: X(bound), y: 40, width: W - X(bound), height: base - 40, fill: 'rgba(216,96,24,.45)' }, s);
-    if (bound < 99.9) text(s, (X(bound) + W) / 2, 30, 'ELIMINATED', { 'text-anchor': 'middle', fill: '#ffd2b8', 'font-size': 22, 'font-weight': 900, 'letter-spacing': 3 });
-    for (let v = 0; v <= 100; v += 10) {
-      svg('line', { x1: X(v), x2: X(v), y1: 40, y2: base, stroke: 'rgba(255,255,255,.35)', 'stroke-width': 2 }, s);
-      text(s, X(v), H - 12, String(v), { 'text-anchor': 'middle', fill: '#fff', 'font-size': 26, 'font-weight': 900 });
-    }
-    svg('line', { x1: 0, x2: W, y1: base, y2: base, stroke: '#fff', 'stroke-width': 4 }, s);
-    // The room's guesses as dots, stacked a little so crowds show up
-    const seen = {};
-    guesses.slice(0, 1500).forEach((g) => {
-      const b = Math.round(g);
-      seen[b] = (seen[b] || 0) + 1;
-      const y = base - 12 - ((seen[b] - 1) % 30) * 10;
-      const alive = g <= bound + 1e-9;
-      svg('circle', { cx: X(g), cy: y, r: 5.5, fill: alive ? '#FFCB05' : 'rgba(255,255,255,.35)', stroke: alive ? '#00274C' : 'none', 'stroke-width': 1.5 }, s);
-    });
-    svg('line', { x1: X(bound), x2: X(bound), y1: 36, y2: base + 6, stroke: '#FFCB05', 'stroke-width': 6 }, s);
-    const lbl = `Upper bound: ${B.fmt(bound, 1)}`;
-    const lw = lbl.length * 13 + 26;
-    const lx = Math.max(lw / 2, Math.min(W - lw / 2, X(bound)));
-    svg('rect', { x: lx - lw / 2, y: 50, width: lw, height: 38, rx: 19, fill: '#FFCB05' }, s);
-    text(s, lx, 76, lbl, { 'text-anchor': 'middle', fill: '#00274C', 'font-size': 21, 'font-weight': 900 });
-
-    let call;
-    if (forever) {
-      call = guesses.length
-        ? `Nash says everyone guesses <b>0</b>. In this room, <b>${guesses.filter((g) => g <= 1).length}</b> of ${guesses.length} said 0 or 1. Zero is also, by coincidence, the number of second-half points Michigan's offense prefers.`
-        : 'Nash says everyone guesses <b>0</b>. It\'s the only number that\'s a best response to itself.';
-    } else if (k === 0) {
-      call = 'Start with what <i>nobody</i> should guess, then assume everyone else has figured that out too. Press → to eliminate.';
-    } else {
-      const c = cutBy(bound);
-      call = `After ${k} round${k > 1 ? 's' : ''} of elimination, nothing above <b>${B.fmt(bound, 1)}</b> survives.` + (guesses.length ? ` That knocks out <b>${c}</b> of this room's ${guesses.length} guesses.` : '');
-    }
-    $('nash-call').innerHTML = call;
+    const dead = $('.dead', svg);
+    dead.style.x = `${X(b)}px`;
+    dead.style.width = `${X(100) - X(b)}px`;
+    $$('.dot', svg).forEach((c) => c.classList.toggle('gone', +c.dataset.g > b + 1e-9));
+    setH(700);
+    $('#bound-line', svg).innerHTML = step === 0 ? '' : lineSvg(step === 7 ? 0.6 : b, 'bound', step === 7 ? 'Nash: 0' : `≤ ${fmt(b)}`, 30, '#c8102e', '#ffffff');
   }
 
-  /* ---------------------------------------------------------- why not 0 */
   function renderWhy() {
-    const rows = [
-      { label: 'Nagel lab (1995)', v: 36.7 },
-      { label: 'FT readers (1997)', v: 18.9 },
-    ];
-    (D ? D.history : []).forEach((h) => rows.push({ label: D.history.length > 1 ? `This room, round ${h.round}` : 'This room', v: h.avg, us: true }));
-    if (!D || !D.history.length) rows.push({ label: 'This room', v: null, us: true });
-    rows.push({ label: 'Nash equilibrium', v: 0, nash: true });
-    $('cmp').innerHTML = rows.map((r) => `<div class="crow ${r.us ? 'us' : ''} ${r.nash ? 'nash' : ''}"><div>${r.label}</div>
-      <div class="cbar"><i style="width:${r.v == null ? 0 : Math.max(r.nash ? 0 : 10, Math.min(100, (r.v / 50) * 100))}%">${r.v == null ? '?' : B.fmt(r.v, 1)}</i></div></div>`).join('');
-  }
-
-  /* --------------------------------------------------------------- again */
-  function renderAgain() {
-    $('next-round').textContent = D ? D.round + 1 : 2;
-    const host = $('again-chart');
-    host.innerHTML = '';
-    const hist = D ? D.history : [];
-    const [W, H] = box(host, 800, 500);
-    const s = svg('svg', { viewBox: `0 0 ${W} ${H}` }, host);
-    const nCols = Math.max(3, hist.length + 1);
-    const colW = W / nCols;
-    const Y = (v) => H - 50 - (v / 60) * (H - 110);
-    for (let v = 0; v <= 60; v += 10) {
-      svg('line', { x1: 0, x2: W, y1: Y(v), y2: Y(v), stroke: 'rgba(255,255,255,.12)', 'stroke-width': 2 }, s);
-      text(s, -10, Y(v) + 8, String(v), { 'text-anchor': 'end', fill: '#9fb3c8', 'font-size': 20, 'font-weight': 700 });
+    const rows = [];
+    (D.history || []).slice(0, 3).forEach((h) => rows.push({ label: `This room, round ${h.round} (average)`, v: h.mean, us: true }));
+    if (!rows.length && D.result && D.result.n && D.stage >= 2) rows.push({ label: `This room, round ${D.round} (average)`, v: D.result.mean, us: true });
+    rows.push({ label: 'Nagel (1995) lab subjects (average)', v: 36.7 });
+    rows.push({ label: '<i>FT</i> readers, 1997 (winning number)', v: 13 });
+    const k = JSON.stringify(rows);
+    const bars = $('#cmp-bars');
+    if (bars.dataset.k !== k) {
+      bars.dataset.k = k;
+      bars.innerHTML = rows.map((r) => `<div class="cmp ${r.us ? 'us' : ''}"><div>${r.label}</div><div class="track"><div class="fill" style="width:0%">${fmt(r.v)}</div></div></div>`).join('');
+      requestAnimationFrame(() => requestAnimationFrame(() => $$('.fill', bars).forEach((f, i) => { f.style.width = `${Math.max(4, rows[i].v)}%`; })));
     }
-    text(s, 0, 24, 'Average guess (blue) and ⅔ target (maize), by round', { fill: '#c9d6e4', 'font-size': 22, 'font-weight': 700 });
-    for (let i = 0; i < nCols; i += 1) {
-      const h = hist[i];
-      const cx = colW * i + colW / 2;
-      text(s, cx, H - 14, h ? `Round ${h.round}` : i === hist.length ? 'Next?' : '', { 'text-anchor': 'middle', fill: '#fff', 'font-size': 22, 'font-weight': 800 });
-      if (!h) {
-        if (i === hist.length) {
-          svg('rect', { x: cx - 70, y: Y(30), width: 140, height: Y(0) - Y(30), rx: 10, fill: 'none', stroke: 'rgba(255,203,5,.6)', 'stroke-width': 3, 'stroke-dasharray': '10 8' }, s);
-          text(s, cx, Y(15) + 10, '?', { 'text-anchor': 'middle', fill: '#FFCB05', 'font-size': 56, 'font-weight': 900 });
-        }
-        continue;
-      }
-      svg('rect', { x: cx - 74, y: Y(h.avg), width: 70, height: Y(0) - Y(h.avg), rx: 8, fill: '#1a4f86', stroke: '#fff', 'stroke-width': 2 }, s);
-      svg('rect', { x: cx + 4, y: Y(h.target), width: 70, height: Y(0) - Y(h.target), rx: 8, fill: '#FFCB05' }, s);
-      text(s, cx - 39, Y(h.avg) - 10, B.fmt(h.avg, 1), { 'text-anchor': 'middle', fill: '#fff', 'font-size': 24, 'font-weight': 900 });
-      text(s, cx + 39, Y(h.target) - 10, B.fmt(h.target, 1), { 'text-anchor': 'middle', fill: '#FFCB05', 'font-size': 24, 'font-weight': 900 });
-    }
+    $('.cmp-title').textContent = 'How this room stacks up (0 to 100)';
+    const H = D.history || [];
+    $('#hist-line').textContent = H.length ? H.map((h) => `Round ${h.round}: average ${fmt(h.mean)}, target ${fmt(h.target)}`).join('  ·  ') : '';
   }
 
-  /* --------------------------------------------------------------- join */
-  function renderJoin() {
-    if (!D) return;
-    $('qr-url').textContent = D.playUrl.replace(/^https?:\/\//, '');
-    if (!$('qr').src) $('qr').src = 'qr.svg';
-    $('j-n').textContent = D.n;
-    $('j-locked').textContent = D.locked;
-    const st = $('j-status');
-    const msg = {
-      lobby: `Round ${D.round}: guessing opens when you're ready.`,
-      open: `Round ${D.round}: guessing is OPEN`,
-      closed: `Round ${D.round}: guessing closed. Ready for the reveal.`,
-      revealed: `Round ${D.round}: results are in.`,
-    }[D.status];
-    st.className = 'status-line ' + D.status;
-    st.innerHTML = `<span class="dot"></span>${msg}`;
-    $('ticker').innerHTML = D.ticker.map((n) => `<span class="chip">${B.esc(n)}</span>`).join('');
+  /* -------------------------------------------------------------- controls */
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-act]');
+    if (a) return act(a.dataset.act);
+    const n = e.target.closest('[data-nav]');
+    if (n) return (+n.dataset.nav > 0 ? next() : prev());
+  });
+  $('#fs').addEventListener('click', toggleFs);
+  function toggleFs() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
   }
 
-  /* ------------------------------------------------------------ dispatch */
-  function renderSlide(entering) {
-    if (!D) return;
-    switch (cur) {
-      case IDX.join: renderJoin(); break;
-      case IDX.results: renderResults(entering); break;
-      case IDX.math: renderMath(); break;
-      case IDX.lk: renderLk(); break;
-      case IDX.nash: renderNash(); break;
-      case IDX.why: renderWhy(); break;
-      case IDX.again: renderAgain(); break;
-      default: break;
-    }
-  }
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    const k = e.key;
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); prev(); }
+    else if (k === 'Home') go(0);
+    else if (k === 'End') go(slides.length - 1);
+    else if (/^[1-9]$/.test(k)) go(+k - 1);
+    else if (k === 'f' || k === 'F') toggleFs();
+    else if (k === 'o' || k === 'O') act('open');
+    else if (k === 'c' || k === 'C') act('close');
+    else if (k === 'r' || k === 'R') act(D && D.status === 'revealed' && D.stage >= 4 ? 'replay' : 'reveal');
+    else if (k === 'n' || k === 'N') act('newround');
+    else if (k === 'b' || k === 'B') act('robots');
+  });
 
-  const saved = Number(store('t3-slide'));
-  go(Number.isInteger(saved) && saved >= 0 && saved < slides.length ? saved : 0);
+  let dockTimer;
+  addEventListener('mousemove', () => {
+    $('#dock').classList.add('show');
+    clearTimeout(dockTimer);
+    dockTimer = setTimeout(() => $('#dock').classList.remove('show'), 2500);
+  });
+
+  go(cur);
   poll();
-  showDock();
 })();

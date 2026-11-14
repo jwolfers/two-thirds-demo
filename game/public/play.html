@@ -4,100 +4,113 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#00274C">
-  <title>The ⅔ Game</title>
+  <title>Hail to the Two-Thirds</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="brand.css?v=4">
-  <link rel="stylesheet" href="play.css?v=4">
+  <link rel="stylesheet" href="brand.css">
+  <link rel="stylesheet" href="play.css">
 </head>
 <body>
-  <header class="top">
-    <span id="mark"></span>
-    <div class="top-text">
-      <div class="top-title">The ⅔ Game</div>
-      <div class="top-sub">EconEd edition</div>
+  <header class="top wing-stripes">
+    <span class="blockm" aria-hidden="true"></span>
+    <div class="titles">
+      <div class="kicker">The &#8532; Game</div>
+      <div class="title">Hail to the Two-Thirds</div>
     </div>
-    <span class="pill" id="pill">Connecting…</span>
+    <span id="status" class="pill lobby"><span class="dot"></span><span>Pregame</span></span>
   </header>
 
-  <main>
-    <!-- 1. Join -->
-    <section class="card screen" id="s-join" hidden>
-      <h1>Pick a number.<br><span class="hl">Outthink the room.</span></h1>
-      <ol class="rules">
-        <li>Everyone picks a number from <b>0 to 100</b>.</li>
-        <li>We take the <b>average</b> of all the guesses.</li>
-        <li>The winner is whoever is closest to <b>⅔ of that average</b>.</li>
-      </ol>
-      <p class="fine">Ties share the glory. The prize is bragging rights, which is roughly what Michigan football is playing for this year.</p>
+  <main id="app" aria-live="polite"></main>
+
+  <footer class="foot">Go Blue. Pick wisely. <span id="who"></span></footer>
+
+  <template id="t-join">
+    <section class="card">
+      <h1>Welcome to the Big House of game theory</h1>
+      <div class="rules">
+        <div class="rule"><b>1</b><span>Pick a number from <strong>0 to 100</strong>.</span></div>
+        <div class="rule"><b>2</b><span>We average everyone&rsquo;s numbers, and take <strong>&#8532; of that average</strong>.</span></div>
+        <div class="rule"><b>3</b><span>Whoever is <strong>closest to &#8532; of the average</strong> wins. Glory. Bragging rights. No NIL money.</span></div>
+      </div>
       <form id="join-form" autocomplete="off">
-        <label for="name">Nickname <span class="opt">(shown if you win)</span></label>
-        <input id="name" maxlength="24" placeholder="e.g. Keynesian Beauty" enterkeyhint="next">
-        <label for="school">Where do you teach? <span class="opt">(optional)</span></label>
-        <input id="school" maxlength="40" placeholder="e.g. Michigan, Ohio State*, Harvard" enterkeyhint="go">
-        <button class="btn blue big" type="submit">I'm in</button>
+        <label for="name">Your nickname (it may appear on the big screen)</label>
+        <input id="name" maxlength="24" placeholder="e.g. Keynes&rsquo;s Biggest Fan" autocomplete="nickname" enterkeyhint="next">
+        <label for="school">Your school <span class="opt">(optional, for interschool trash talk)</span></label>
+        <input id="school" maxlength="40" placeholder="e.g. Michigan (condolences accepted)" list="schools" enterkeyhint="go">
+        <datalist id="schools">
+          <option>Michigan</option><option>Ohio State</option><option>Michigan State</option><option>Harvard</option><option>Stanford</option><option>Wisconsin</option><option>Notre Dame</option><option>A school we&rsquo;ll beat next year</option>
+        </datalist>
+        <button class="big" type="submit">Take the field</button>
+        <p class="err" id="join-err" role="alert"></p>
       </form>
     </section>
+  </template>
 
-    <!-- 2. Waiting for the professor -->
-    <section class="card screen center" id="s-lobby" hidden>
-      <div class="whistle">🏈</div>
-      <h2>You're in, <span id="lobby-name"></span>.</h2>
-      <p>Guessing opens when the professor kicks off.</p>
-      <p class="count"><b id="lobby-n">0</b> players warming up</p>
-      <p class="joke" id="lobby-joke"></p>
-      <button class="link" id="rename">Change my name</button>
+  <template id="t-wait">
+    <section class="card center">
+      <div class="huddle" aria-hidden="true">
+        <span></span><span></span><span></span><span></span><span></span>
+      </div>
+      <h1>You&rsquo;re in, <span data-name></span>!</h1>
+      <p class="lede">We&rsquo;re in the huddle. Guessing opens when the professor blows the whistle.</p>
+      <p class="hint">While you wait: what do you think everyone <em>else</em> will pick?</p>
+      <p class="joke" data-joke></p>
     </section>
+  </template>
 
-    <!-- 3. Guess -->
-    <section class="card screen" id="s-guess" hidden>
-      <h2 id="guess-h">Your guess</h2>
-      <p class="hint">Closest to <b>⅔ of the average</b> wins. Think about what everyone else will pick…</p>
+  <template id="t-guess">
+    <section class="card">
+      <h1>Your guess</h1>
+      <p class="lede">Closest to <strong>&#8532; of the average</strong> wins. You can change your mind until the whistle.</p>
       <form id="guess-form" autocomplete="off">
-        <div class="dial">
-          <input id="guess" type="text" inputmode="decimal" placeholder="?" maxlength="6" aria-label="Your guess, from 0 to 100">
+        <div class="numwrap">
+          <input id="guess" class="num" inputmode="decimal" placeholder="?" aria-label="Your guess, 0 to 100" maxlength="6" enterkeyhint="send">
         </div>
-        <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Slide to choose">
-        <div class="scale"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+        <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Slide to pick a number">
+        <div class="scale"><span>0</span><span>50</span><span>100</span></div>
+        <button class="big" type="submit" id="lock">Lock it in</button>
         <p class="err" id="guess-err" role="alert"></p>
-        <button class="btn big" id="lock" type="submit">Lock it in</button>
       </form>
       <div class="locked" id="locked" hidden>
-        <div class="locked-n" id="locked-n"></div>
-        <p id="locked-joke"></p>
+        <div class="locked-label">Locked in</div>
+        <div class="locked-num" data-guess></div>
+        <p>Change it above any time before the whistle. <span data-count></span></p>
       </div>
-      <p class="count"><b id="guess-n">0</b> of <b id="guess-tot">0</b> locked in</p>
+      <details class="rules-mini">
+        <summary>Remind me of the rules</summary>
+        <p>Everyone picks a number from 0 to 100. We compute the average and multiply by &#8532;. Closest to that number wins. Ties share the glory.</p>
+      </details>
     </section>
+  </template>
 
-    <!-- 4. Closed -->
-    <section class="card screen center" id="s-closed" hidden>
-      <div class="whistle">📣</div>
-      <h2>Whistle blown!</h2>
-      <p id="closed-mine"></p>
-      <p class="joke" id="closed-joke"></p>
+  <template id="t-closed">
+    <section class="card center">
+      <div class="whistle" aria-hidden="true">&#127944;</div>
+      <h1>The whistle has blown</h1>
+      <p class="lede" data-mine></p>
+      <p class="hint">Eyes on the big screen. The officials are reviewing the play.</p>
+      <p class="joke" data-joke></p>
     </section>
+  </template>
 
-    <!-- 5. Results -->
-    <section class="card screen" id="s-result" hidden>
-      <div class="banner" id="res-banner"></div>
-      <div class="stats">
-        <div><span>Average</span><b id="res-avg"></b></div>
-        <div class="tgt"><span>⅔ target</span><b id="res-tgt"></b></div>
-        <div><span>You said</span><b id="res-me"></b></div>
+  <template id="t-results">
+    <section class="card result">
+      <div class="banner" data-banner></div>
+      <div class="facts">
+        <div><span>Average guess</span><b data-mean></b></div>
+        <div class="hot"><span>&#8532; of the average</span><b data-target></b></div>
+        <div><span>Your guess</span><b data-guess></b></div>
+        <div><span>Your finish</span><b data-rank></b></div>
       </div>
-      <p class="rank" id="res-rank"></p>
-      <div class="level" id="res-level"></div>
-      <p class="winners" id="res-win"></p>
-      <p class="joke" id="res-joke"></p>
-      <p class="fine center">Stay tuned: the next round may be coming.</p>
+      <p class="winners" data-winners></p>
+      <div class="level">
+        <div class="level-tag" data-level></div>
+        <p data-level-blurb></p>
+      </div>
+      <p class="hint">Stay tuned: the professor is about to explain what just happened.</p>
     </section>
-  </main>
+  </template>
 
-  <footer class="foot">Made in Ann Arbor · <span class="maize">Go Blue!</span></footer>
-
-  <script src="brand.js?v=4"></script>
-  <script src="play.js?v=4"></script>
+  <script src="shared.js"></script>
+  <script src="play.js"></script>
 </body>
 </html>
