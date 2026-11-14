@@ -1,51 +1,35 @@
-/* Shared Michigan look for the deck and the phones. */
+/* Shared brand: Michigan maize & blue, Case Western Reserve blue, a football field. */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,700&family=Oswald:wght@500;600;700&display=swap');
+
 :root {
   --maize: #FFCB05;
-  --maize-deep: #E5B600;
-  --blue: #00274C;
-  --blue-950: #00152B;
-  --blue-900: #001D3A;
-  --blue-800: #022F5C;
-  --blue-700: #0B3D6E;
-  --blue-600: #155089;
-  --sky: #8FB8E8;
-  --ink: #FFFFFF;
-  --muted: #B5C7DD;
-  --faint: rgba(255, 255, 255, 0.62);
-  --line: rgba(255, 255, 255, 0.14);
-  --good: #7BE0A5;
-  --bad: #FF8A80;
-  --font-display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
-  --font-body: 'Barlow', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-varsity: 'Graduate', 'Rockwell', Georgia, serif;
-  color-scheme: dark;
+  --maize-soft: #FFE27A;
+  --um-blue: #00274C;
+  --um-blue-2: #0B3A6B;
+  --cwru-blue: #0A304E;
+  --cwru-sky: #7FB3E3;
+  --cwru-gray: #A6A6A6;
+  --turf: #2F7D32;
+  --turf-2: #2A7030;
+  --chalk: #F4F1E8;
+  --ink: #0B1B2E;
+  --red: #E4572E;
+  --sans: 'Montserrat', 'Segoe UI', Arial, sans-serif;
+  --score: 'Oswald', 'Arial Narrow', Impact, sans-serif;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: var(--sans); background: var(--um-blue); color: #fff; }
+button { font-family: inherit; }
 
-body {
-  margin: 0;
-  background: var(--blue);
-  color: var(--ink);
-  font-family: var(--font-body);
-  -webkit-font-smoothing: antialiased;
+.mark { display: inline-block; vertical-align: middle; }
+
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 9999; }
+.confetti i {
+  position: absolute; top: -20px; width: 10px; height: 16px; border-radius: 2px;
+  animation: fall linear forwards;
 }
-
-[hidden] { display: none !important; }
-
-.block-m { display: block; width: 100%; height: auto; }
-.block-m polygon { fill: var(--maize); stroke: var(--blue); stroke-width: 2.5; stroke-linejoin: miter; paint-order: stroke; }
-
-.maize { color: var(--maize); }
-
-/* A stacked 2/3 that renders in any font. */
-.frac { display: inline-block; white-space: nowrap; line-height: 1; }
-.frac .n { font-size: 0.62em; vertical-align: 0.48em; }
-.frac .s { font-size: 0.9em; margin: 0 -0.04em; }
-.frac .d { font-size: 0.62em; vertical-align: baseline; }
-
-.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 9999; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+@keyframes fall {
+  to { transform: translate(var(--drift), 110vh) rotate(var(--spin)); opacity: .9; }
 }

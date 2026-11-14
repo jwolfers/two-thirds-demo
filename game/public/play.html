@@ -1,117 +1,95 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#00274C">
-<title>The 2/3 Game</title>
-<meta name="description" content="Guess two-thirds of the average. A Keynesian beauty contest, Michigan edition.">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&family=Graduate&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/brand.css">
-<link rel="stylesheet" href="/play.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#00274C">
+  <title>The ⅔ Game</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="brand.css">
+  <link rel="stylesheet" href="play.css">
 </head>
 <body>
-
 <header class="top">
-  <div class="brand"><span class="brand-m" data-blockm></span><span class="brand-t">The <span data-frac></span> Game</span></div>
-  <span id="roundChip" class="round-chip" hidden>Round 1</span>
+  <span data-mark="m" data-size="46"></span>
+  <div class="top-title"><b>The ⅔ Game</b><small>Maize &amp; Blue × Spartan Blue</small></div>
+  <span data-mark="cwru" data-size="40"></span>
 </header>
-<div id="net" class="net" hidden>Fumble! Reconnecting…</div>
+<div class="stripe"></div>
 
 <main>
-  <section id="s-loading" class="screen center">
-    <div class="spinner" aria-hidden="true">🏈</div>
-    <p class="muted">Jogging out of the tunnel…</p>
+  <!-- Join --------------------------------------------------------------- -->
+  <section class="screen" id="sJoin">
+    <h1>Welcome to the beauty contest</h1>
+    <div class="rules">
+      <div><b>1</b><span>Pick a number from <strong>0</strong> to <strong>100</strong>.</span></div>
+      <div><b>2</b><span>We take <strong>⅔ of the average</strong> of everyone's guesses.</span></div>
+      <div><b>3</b><span>Closest to that target <strong>wins</strong>.</span></div>
+    </div>
+    <label class="lbl" for="name">Nickname for the scoreboard <em>(optional)</em></label>
+    <input id="name" maxlength="24" autocomplete="off" placeholder="e.g. Nash Rambler">
+    <p class="lbl">Who are you rooting for?</p>
+    <div class="teams" id="teams">
+      <button data-team="um" class="team um"><span data-mark="m" data-size="44"></span><b>Michigan</b></button>
+      <button data-team="cwru" class="team cwru"><span data-mark="cwru" data-size="40"></span><b>Case Western</b></button>
+      <button data-team="other" class="team other"><span class="globe">🌎</span><b>Somewhere else</b></button>
+    </div>
+    <button class="go" id="joinBtn">Let's play</button>
+    <p class="fine">No login. Your nickname may appear on the big screen; your number never does (unless you win).</p>
   </section>
 
-  <section id="s-waiting" class="screen" hidden>
-    <div class="card center">
-      <div class="big-emoji" aria-hidden="true">🏟️</div>
-      <h1 id="waitTitle">Warming up</h1>
-      <p>The game opens in a moment. Like our offense, it takes a while to get going. Unlike our offense, this will actually start.</p>
-    </div>
-    <div class="card rules">
-      <h2>How it works</h2>
-      <ol>
-        <li>Pick a number from <b>0 to 100</b>.</li>
-        <li>We average everyone's guesses.</li>
-        <li>Closest to <b><span data-frac></span> of the average</b> wins.</li>
-      </ol>
-      <p class="muted small">Start thinking now: what will everyone else pick?</p>
-    </div>
+  <!-- Waiting for kickoff ------------------------------------------------ -->
+  <section class="screen" id="sWait">
+    <div class="ball">🏈</div>
+    <h1>You're in, <span class="who"></span>!</h1>
+    <p class="lead">Guessing opens when the professor kicks off. Keep this page open.</p>
+    <p class="quip" id="waitQuip"></p>
+    <button class="link" data-edit>Change nickname or team</button>
   </section>
 
-  <section id="s-form" class="screen" hidden>
-    <div class="card rules">
-      <h2>How to play</h2>
-      <ol>
-        <li>Pick a number from <b>0 to 100</b>.</li>
-        <li>We average everyone's guesses.</li>
-        <li>Closest to <b><span data-frac></span> of the average</b> wins.</li>
-      </ol>
-      <p class="eg">Example: if the average is 75, the target is <span data-frac></span> × 75 = <b>50</b>.</p>
+  <!-- Guess -------------------------------------------------------------- -->
+  <section class="screen" id="sGuess">
+    <p class="round" id="roundLbl">Round 1</p>
+    <h1>Your guess</h1>
+    <p class="lead small">Closest to <b>⅔ of the average</b> wins.</p>
+    <div class="dial">
+      <input id="guess" type="number" inputmode="decimal" min="0" max="100" step="any" placeholder="?" aria-label="Your guess, 0 to 100">
     </div>
-
-    <form id="form" class="card" novalidate autocomplete="off">
-      <label for="guess" class="lbl">Your guess</label>
-      <div class="guess-box">
-        <input id="guess" name="guess" type="text" inputmode="decimal" enterkeyhint="done" placeholder="0–100" maxlength="6" aria-describedby="formMsg">
-      </div>
-
-      <label for="name" class="lbl">Your name <span>shown on screen if you win</span></label>
-      <input id="name" name="name" type="text" maxlength="24" autocomplete="nickname" placeholder="e.g. Pat">
-
-      <label for="school" class="lbl">Your school <span>optional</span></label>
-      <input id="school" name="school" type="text" maxlength="32" placeholder="e.g. Ohio State (we forgive you)">
-
-      <p id="formMsg" class="msg" role="alert"></p>
-      <button id="submitBtn" type="submit" class="btn">Lock it in</button>
-    </form>
+    <input id="slider" type="range" min="0" max="100" step="1" value="50" aria-label="Slide to choose">
+    <div class="ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+    <p class="err" id="err"></p>
+    <button class="go" id="lockBtn">Lock it in 🔒</button>
+    <div class="locked" id="lockedBox" hidden>
+      <p>Locked in: <b id="lockedVal"></b></p>
+      <small>You can change it until the whistle blows.</small>
+    </div>
+    <p class="quip" id="guessQuip"></p>
   </section>
 
-  <section id="s-locked" class="screen" hidden>
-    <div class="card center">
-      <div class="lbl">Your guess</div>
-      <div id="lockedGuess" class="bignum">–</div>
-      <p class="locked-line">🔒 Locked in. That's more commitment than our offensive line has shown all season.</p>
-      <p id="playingAs" class="muted small"></p>
-      <p class="muted small">You can change it until guessing closes.</p>
-      <button id="changeBtn" type="button" class="btn ghost">Change my guess</button>
-    </div>
-    <p class="count-line"><b id="countLocked">0</b> <span id="countLockedLabel">guesses</span> so far. Eyes on the big screen.</p>
+  <!-- Closed ------------------------------------------------------------- -->
+  <section class="screen" id="sClosed">
+    <div class="ball">📣</div>
+    <h1>Whistle blown!</h1>
+    <p class="lead" id="closedLead">Eyes on the big screen. Results are coming.</p>
+    <p class="quip" id="closedQuip"></p>
   </section>
 
-  <section id="s-closed" class="screen" hidden>
-    <div class="card center">
-      <div class="big-emoji" aria-hidden="true">🚪</div>
-      <h1>Guesses are closed</h1>
-      <p>Like Michigan's playoff window.</p>
-      <div id="closedMine"></div>
-      <p class="muted">Results are coming up on the big screen.</p>
+  <!-- Results ------------------------------------------------------------ -->
+  <section class="screen" id="sResult">
+    <div class="banner" id="banner"></div>
+    <div class="cards">
+      <div class="card"><small>Average</small><b id="rAvg">–</b></div>
+      <div class="card hot"><small>Target (⅔)</small><b id="rTarget">–</b></div>
+      <div class="card"><small>Your guess</small><b id="rMine">–</b></div>
+      <div class="card"><small>Your finish</small><b id="rRank">–</b></div>
     </div>
-  </section>
-
-  <section id="s-results" class="screen" hidden>
-    <div id="resultCard" class="card center"></div>
-    <div class="card stats">
-      <div><span>Average guess</span><b id="rAvg">–</b></div>
-      <div class="hot"><span>Target: <span data-frac></span> × average</span><b id="rTarget">–</b></div>
-      <div><span>Winning guess</span><b id="rWin">–</b></div>
-      <div><span>Players</span><b id="rN">–</b></div>
-    </div>
-    <p class="muted center small">Stick around: the professor might run it again.</p>
+    <p class="level" id="rLevel"></p>
+    <p class="winners" id="rWinners"></p>
+    <p class="fine">Stay tuned: a new round may be coming.</p>
   </section>
 </main>
 
-<footer class="foot">
-  <span>A Keynesian beauty contest · University of Michigan</span>
-  <a href="/teacher">Projector view</a>
-</footer>
-
-<script src="/common.js"></script>
-<script src="/play.js"></script>
+<script src="common.js"></script>
+<script src="play.js"></script>
 </body>
 </html>
