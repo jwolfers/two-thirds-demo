@@ -1,246 +1,213 @@
-// The phone page. Joins, takes a guess, and shows how you did after the reveal.
+// The phone page: join, wait, guess, see how you did.
 (function () {
   'use strict';
-  const { blockM, cwruMark, LEVEL_TALK, fmt, esc, confetti, TEAMS } = window.TT;
-  const $ = (s) => document.querySelector(s);
-  const $$ = (s) => [...document.querySelectorAll(s)];
+  const B = window.Brand;
+  const $ = (id) => document.getElementById(id);
 
-  $$('[data-mark]').forEach((el) => {
-    const size = Number(el.dataset.size || 40);
-    el.innerHTML = el.dataset.mark === 'm' ? blockM(size) : cwruMark(size);
-  });
-
-  /* --------------------------------------------------------- local memory */
-  const store = {
-    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
-  };
-  let pid = store.get('tt-pid');
-  if (!pid) {
-    const a = new Uint8Array(12);
-    crypto.getRandomValues(a);
-    pid = 'p' + [...a].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
-    store.set('tt-pid', pid);
+  /* ------------------------------------------------------------ identity */
+  function store(k, v) {
+    try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { /* private mode */ }
+    return null;
   }
-  let profile = store.get('tt-profile'); // { name, team }
-  let editing = !profile;
-  let state = null;
-  let shownRound = null; // round whose guess screen we've initialised
-  let celebrated = store.get('tt-celebrated') || null;
-
-  /* --------------------------------------------------------------- quips */
-  const QUIPS = {
-    wait: [
-      'While you wait: Michigan\'s offense is also waiting for something to open up.',
-      'Case Western\'s mascot is Spartie. Not to be confused with the Spartans up the road from Ann Arbor. Totally different. Much nicer.',
-      'Stretch those thumbs. For some of us this is the most cardio all week.',
-      'Remember: it\'s not what you think. It\'s what you think they think.',
-      'Fun fact: a football field is exactly 100 yards. So is this game. Coincidence? Yes.',
-    ],
-    guess: [
-      'No pressure. Well, some pressure. It\'s an economics class.',
-      'Decimals allowed. Overthinking encouraged.',
-      'Your number stays secret until the reveal. Unlike Michigan\'s play calls.',
-      'Take your time. Michigan\'s offense certainly does.',
-    ],
-    closed: [
-      'Computing two-thirds of the average. Faster than a Michigan two-minute drill.',
-      'The replay booth is reviewing every guess…',
-      'Somewhere, a Level 0 player is very confident right now.',
-    ],
-  };
-  const pick = (a) => a[(Math.random() * a.length) | 0];
-  const quipT = {};
-  function quip(el, list) {
-    if (quipT[el]) return;
-    const node = $(el);
-    node.textContent = pick(list);
-    quipT[el] = setInterval(() => { node.textContent = pick(list); }, 8000);
+  let pid = store('t3-pid');
+  if (!pid || !/^[A-Za-z0-9_-]{8,64}$/.test(pid)) {
+    pid = 'p' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    store('t3-pid', pid);
   }
 
-  /* -------------------------------------------------------------- screens */
-  function show(id) {
-    $$('.screen').forEach((s) => s.classList.toggle('on', s.id === id));
+  $('mark').innerHTML = B.blockM(46);
+
+  let S = null; // last server state
+  let renaming = false;
+  let editing = false; // the guess box has focus or was just changed
+  let lastRound = null;
+  let celebrated = null;
+  let jokeFor = {};
+
+  // One joke per screen per round, so it doesn't flicker on every poll.
+  function joke(kind) {
+    const key = kind + ':' + (S ? S.round : 0);
+    if (!jokeFor[key]) jokeFor[key] = B.pick(B.JOKES[kind]);
+    return jokeFor[key];
   }
 
-  /* ----------------------------------------------------------------- join */
-  let team = profile ? profile.team : null;
-  function paintTeams() {
-    $$('.team').forEach((b) => b.classList.toggle('sel', b.dataset.team === team));
-  }
-  $('#teams').addEventListener('click', (e) => {
-    const b = e.target.closest('.team');
-    if (!b) return;
-    team = b.dataset.team;
-    paintTeams();
-  });
-  $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
-    editing = true;
-    $('#name').value = profile ? profile.name : '';
-    team = profile ? profile.team : null;
-    paintTeams();
-    render();
-  }));
-
-  async function post(url, body) {
-    const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  /* ------------------------------------------------------------- network */
+  async function api(path, body) {
+    const opts = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+    const r = await fetch(path, { cache: 'no-store', ...opts });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again?');
+    if (!r.ok) throw new Error(j.error || 'Something went wrong. Try again.');
     return j;
   }
 
-  $('#joinBtn').addEventListener('click', async () => {
-    const btn = $('#joinBtn');
-    btn.disabled = true;
-    const p = { name: $('#name').value.trim().slice(0, 24), team: team || 'other' };
+  let pollTimer = null;
+  async function poll() {
+    clearTimeout(pollTimer);
     try {
-      await post('api/join', { pid, ...p });
-      profile = p;
-      store.set('tt-profile', p);
-      editing = false;
-      await refresh();
+      S = await api('api/state?pid=' + encodeURIComponent(pid));
+      render();
     } catch (e) {
-      btn.textContent = e.message;
-      setTimeout(() => { btn.textContent = "Let's play"; }, 2500);
+      $('pill').textContent = 'Reconnecting…';
+      $('pill').className = 'pill';
     }
-    btn.disabled = false;
+    pollTimer = setTimeout(poll, document.hidden ? 6000 : 2000);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+
+  /* -------------------------------------------------------------- render */
+  function show(id) {
+    for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
+  }
+
+  function render() {
+    if (!S) return;
+    const pill = $('pill');
+    const labels = { lobby: 'Pregame', open: 'Open', closed: 'Closed', revealed: 'Final' };
+    pill.textContent = `Round ${S.round} · ${labels[S.status] || ''}`;
+    pill.className = 'pill ' + (S.status === 'open' ? 'open' : S.status === 'closed' ? 'closed' : '');
+
+    if (lastRound !== null && S.round !== lastRound) {
+      $('guess').value = '';
+      $('slider').value = 50;
+      editing = false;
+    }
+    lastRound = S.round;
+
+    if (!S.me || renaming) {
+      if (S.me && !$('name').value) { $('name').value = S.me.name; $('school').value = S.me.school || ''; }
+      return show('s-join');
+    }
+
+    if (S.status === 'lobby') {
+      $('lobby-name').textContent = S.me.name;
+      $('lobby-n').textContent = S.n;
+      $('lobby-joke').textContent = joke('waiting');
+      return show('s-lobby');
+    }
+
+    if (S.status === 'open') {
+      const g = S.me.guess;
+      $('guess-n').textContent = S.locked;
+      $('guess-tot').textContent = S.n;
+      if (g != null) {
+        $('locked').hidden = false;
+        $('locked-n').textContent = `Your guess: ${B.fmtGuess(g)}`;
+        $('locked-joke').textContent = joke('locked');
+        $('lock').textContent = 'Change my guess';
+        $('guess-h').textContent = 'Locked in. Second thoughts?';
+        if (!editing && document.activeElement !== $('guess')) {
+          $('guess').value = B.fmtGuess(g);
+          $('slider').value = Math.round(g);
+        }
+      } else {
+        $('locked').hidden = true;
+        $('lock').textContent = 'Lock it in';
+        $('guess-h').textContent = 'Your guess';
+      }
+      return show('s-guess');
+    }
+
+    if (S.status === 'closed') {
+      $('closed-mine').innerHTML = S.me.guess != null
+        ? `You guessed <b>${B.fmtGuess(S.me.guess)}</b>. The reveal is coming on the big screen.`
+        : `You didn't get a guess in this round. Like our kicker, you'll get another shot.`;
+      $('closed-joke').textContent = joke('closed');
+      return show('s-closed');
+    }
+
+    if (S.status === 'revealed' && S.result) return renderResult(S.result);
+    show('s-closed');
+  }
+
+  function renderResult(r) {
+    const m = r.mine;
+    $('res-avg').textContent = B.fmt(r.avg, 1);
+    $('res-tgt').textContent = B.fmt(r.target, 1);
+    $('res-me').textContent = m ? B.fmtGuess(m.guess) : '–';
+
+    const banner = $('res-banner');
+    if (!m) {
+      banner.className = 'banner';
+      banner.textContent = 'You sat this one out';
+      $('res-rank').textContent = `${r.n} people guessed. The target was ${B.fmt(r.target, 2)}.`;
+      $('res-level').hidden = true;
+      $('res-joke').textContent = joke('far');
+    } else {
+      const top = m.rank <= Math.max(3, Math.ceil(r.n * 0.1));
+      banner.className = 'banner' + (m.win ? ' win' : '');
+      banner.textContent = m.win ? (r.winnerCount > 1 ? '🏆 You tied for the win!' : '🏆 You won!') : `You finished ${B.ordinal(m.rank)} of ${r.n}`;
+      $('res-rank').textContent = m.win
+        ? `You were ${B.fmt(m.dist, 2)} away from the target. Nobody did better.`
+        : `You were ${B.fmt(m.dist, 2)} away from the target of ${B.fmt(r.target, 2)}.`;
+      const L = B.LEVELS[m.level];
+      $('res-level').hidden = false;
+      $('res-level').innerHTML = `<h3>You played like: <span>${B.esc(L.name)}</span></h3><p>${B.esc(L.blurb)}</p>`;
+      $('res-joke').textContent = joke(m.win ? 'win' : top ? 'near' : 'far');
+      if (m.win && celebrated !== S.round) { celebrated = S.round; B.confetti(5000); }
+    }
+    // Winners all sit at the same distance, but a tie can straddle the target (e.g. 20 and 24 around 22).
+    const same = r.winners.every((w) => w.guess === r.winners[0].guess);
+    const names = r.winners.map((w) => B.esc(w.name) + (w.school ? ` (${B.esc(w.school)})` : '') + (same ? '' : ` with ${B.fmtGuess(w.guess)}`));
+    const more = r.winnerCount > names.length ? ` and ${r.winnerCount - names.length} more` : '';
+    const said = same && r.winners.length ? `, who said ${B.fmtGuess(r.winners[0].guess)}` : '';
+    $('res-win').innerHTML = r.winnerCount ? `<b>Winner${r.winnerCount > 1 ? 's' : ''}:</b> ${names.join(', ')}${more}${said}.` : '';
+    show('s-result');
+  }
+
+  /* --------------------------------------------------------------- forms */
+  $('join-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.submitter || e.target.querySelector('button');
+    btn.disabled = true;
+    try {
+      S = await api('api/join', { pid, name: $('name').value, school: $('school').value });
+      renaming = false;
+      render();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  $('rename').addEventListener('click', () => { renaming = true; render(); $('name').focus(); });
+
+  const guessBox = $('guess');
+  guessBox.addEventListener('input', () => {
+    editing = true;
+    $('guess-err').textContent = '';
+    const v = Number(guessBox.value.replace(',', '.'));
+    if (Number.isFinite(v) && v >= 0 && v <= 100) $('slider').value = Math.round(v);
+  });
+  $('slider').addEventListener('input', () => {
+    editing = true;
+    $('guess-err').textContent = '';
+    guessBox.value = $('slider').value;
   });
 
-  /* ---------------------------------------------------------------- guess */
-  const guessEl = $('#guess');
-  const slider = $('#slider');
-  guessEl.addEventListener('input', () => {
-    const v = Number(String(guessEl.value).replace(',', '.'));
-    if (Number.isFinite(v)) slider.value = Math.max(0, Math.min(100, v));
-    $('#err').textContent = '';
-  });
-  slider.addEventListener('input', () => {
-    guessEl.value = slider.value;
-    $('#err').textContent = '';
-  });
-  guessEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') lock(); });
-  $('#lockBtn').addEventListener('click', lock);
-
-  async function lock() {
-    const raw = String(guessEl.value).trim().replace(',', '.');
+  $('guess-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const raw = guessBox.value.trim().replace(',', '.');
     const v = Number(raw);
     if (!raw || !Number.isFinite(v) || v < 0 || v > 100) {
-      $('#err').textContent = 'Pick a number from 0 to 100. (Out of bounds is a penalty.)';
+      $('guess-err').textContent = 'Pick a number from 0 to 100. (Yes, decimals are fine.)';
       return;
     }
-    const btn = $('#lockBtn');
+    const btn = $('lock');
     btn.disabled = true;
     try {
-      const j = await post('api/guess', { pid, guess: v, name: profile ? profile.name : '', team: profile ? profile.team : 'other' });
-      guessEl.blur();
-      if (navigator.vibrate) navigator.vibrate(30);
-      showLocked(j.guess);
-      await refresh();
-    } catch (e) {
-      $('#err').textContent = e.message;
-    }
-    btn.disabled = false;
-  }
-  function showLocked(g) {
-    const box = $('#lockedBox');
-    if (g == null) { box.hidden = true; $('#lockBtn').textContent = 'Lock it in 🔒'; return; }
-    box.hidden = false;
-    $('#lockedVal').textContent = fmt(g, 2);
-    $('#lockBtn').textContent = 'Change my guess';
-  }
-
-  /* --------------------------------------------------------------- render */
-  function render() {
-    if (editing || !profile) { show('sJoin'); return; }
-    if (!state) { show('sWait'); return; }
-    const me = state.me;
-    $$('.who').forEach((el) => { el.textContent = profile.name || (profile.team === 'um' ? 'Wolverine' : profile.team === 'cwru' ? 'Spartan' : 'friend'); });
-
-    if (state.status === 'waiting') {
-      show('sWait');
-      quip('#waitQuip', QUIPS.wait);
-    } else if (state.status === 'open') {
-      if (shownRound !== state.round) {
-        shownRound = state.round;
-        guessEl.value = me && me.guess != null ? me.guess : '';
-        slider.value = me && me.guess != null ? me.guess : 50;
-        $('#err').textContent = '';
-      }
-      $('#roundLbl').textContent = 'Round ' + state.round;
-      showLocked(me ? me.guess : null);
-      show('sGuess');
-      quip('#guessQuip', QUIPS.guess);
-    } else if (state.status === 'closed') {
-      $('#closedLead').innerHTML = me && me.guess != null
-        ? `You locked in <b class="maize">${fmt(me.guess, 2)}</b>. Eyes on the big screen.`
-        : 'You didn\'t get a guess in this round. Like a Michigan field goal attempt: next time.';
-      show('sClosed');
-      quip('#closedQuip', QUIPS.closed);
-    } else if (state.status === 'revealed') {
-      renderResult();
-      show('sResult');
-    }
-  }
-
-  function renderResult() {
-    const r = state.result;
-    if (!r) return;
-    const m = r.mine;
-    const me = state.me;
-    $('#rAvg').textContent = fmt(r.avg, 1);
-    $('#rTarget').textContent = fmt(r.target, 1);
-    $('#rMine').textContent = me && me.guess != null ? fmt(me.guess, 2) : '–';
-    $('#rRank').textContent = m ? `#${m.rank}` : '–';
-    const banner = $('#banner');
-    if (m && m.win) {
-      banner.className = 'banner win';
-      banner.innerHTML = `<b>🏆 You won!</b>${r.winnerCount > 1 ? `Shared with ${r.winnerCount - 1} other${r.winnerCount > 2 ? 's' : ''}. ` : ''}${profile.team === 'um' ? 'A Michigan win! Frame this phone.' : profile.team === 'cwru' ? 'Spartans on top. The good Spartans.' : 'You beat both home teams. Rude, but impressive.'}`;
-      if (celebrated !== state.round + ':' + r.n) {
-        celebrated = state.round + ':' + r.n;
-        store.set('tt-celebrated', celebrated);
-        confetti(160);
-        if (navigator.vibrate) navigator.vibrate([60, 40, 120]);
-      }
-    } else if (m) {
-      banner.className = 'banner';
-      const close = m.rank <= Math.max(3, Math.ceil(r.n * 0.1));
-      banner.innerHTML = `<b>${close ? 'So close!' : m.dist < 10 ? 'Not bad!' : 'Well, that happened.'}</b>You finished #${m.rank} of ${r.n}, ${fmt(m.dist, 2)} from the target.${close ? '' : ' Still a better result than Michigan\'s last road trip.'}`;
-    } else {
-      banner.className = 'banner';
-      banner.innerHTML = '<b>You sat this one out</b>Smart, in a way: you can\'t lose if you don\'t play. That\'s also Michigan\'s new offensive philosophy.';
-    }
-    $('#rLevel').innerHTML = m ? `<b>Your style:</b> ${esc(LEVEL_TALK[m.level])}` : '';
-    $('#rLevel').hidden = !m;
-    const ws = r.winners.map((w) => `${esc(w.name)} (${TEAMS[w.team] ? TEAMS[w.team].short : ''}, ${fmt(w.guess, 2)})`);
-    $('#rWinners').innerHTML = `🏆 ${r.winnerCount > 1 ? 'Winners' : 'Winner'}: ${ws.join(', ')}${r.winnerCount > ws.length ? ` +${r.winnerCount - ws.length} more` : ''}`;
-  }
-
-  /* ----------------------------------------------------------------- poll */
-  let rejoining = false;
-  async function refresh() {
-    try {
-      const r = await fetch('api/state?pid=' + encodeURIComponent(pid), { cache: 'no-store' });
-      if (!r.ok) return;
-      state = await r.json();
-      // The server forgot us (restart or reset): quietly sign back in.
-      if (profile && !state.me && !rejoining) {
-        rejoining = true;
-        post('api/join', { pid, ...profile }).catch(() => {}).finally(() => { rejoining = false; });
-      }
+      S = await api('api/guess', { pid, guess: raw });
+      editing = false;
+      guessBox.blur();
+      jokeFor['locked:' + S.round] = null;
       render();
-    } catch (e) { /* offline for a moment; the next poll will catch up */ }
-  }
-  async function loop() {
-    await refresh();
-    setTimeout(loop, document.hidden ? 6000 : 2500);
-  }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+      if (navigator.vibrate) navigator.vibrate(30);
+    } catch (err) {
+      $('guess-err').textContent = err.message;
+      poll();
+    } finally {
+      btn.disabled = false;
+    }
+  });
 
-  if (profile) {
-    $('#name').value = profile.name;
-    paintTeams();
-    post('api/join', { pid, ...profile }).catch(() => {});
-  }
-  render();
-  loop();
+  poll();
 })();
