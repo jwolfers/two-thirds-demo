@@ -1,237 +1,380 @@
-// The Two-Thirds Game: a Keynesian beauty contest, Michigan-visits-Western edition.
-// Mounted by ../server.js at the site root.
-//   Teacher deck: /teacher?key=TEACHER_KEY   (projector; the key unlocks the controls)
-//   Students:     /play                      (phones, via the QR code)
+// The ⅔ Game, Michigan edition.
+//
+// One round at a time lives in memory. Phones post guesses to /api/guess and poll
+// /api/state; the projector deck polls /api/deck and drives the round through
+// /api/admin/* with the teacher key.
+'use strict';
 
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const QRCode = require('qrcode');
 
-const router = express.Router();
 const TEACHER_KEY = process.env.TEACHER_KEY || 'bronco-blue';
-const MAX_ENTRIES = 5000;
+const APP_URL = (process.env.APP_URL || '').replace(/\/+$/, '');
+const BUILD = 'big-house-2026-11';
+const MAX_PLAYERS = 5000;
+const EPS = 1e-9;
 
-router.use(express.json({ limit: '10kb' }));
-router.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+const app = express();
+app.set('trust proxy', 1);
+app.use(express.json({ limit: '8kb' }));
 
-// ---------------------------------------------------------------------------
-// State: one room, one game at a time, held in memory.
-// phase: lobby -> open -> closed -> revealed
-// ---------------------------------------------------------------------------
-const game = {
-  round: 1,
-  phase: 'lobby',
-  entries: new Map(), // cid -> { name, guess, bot }
-  results: null,      // computed when the teacher reveals
-  history: []         // one summary per finished round
-};
+/* ------------------------------------------------------------------ state */
 
-// Level-k benchmarks: level 0 guesses 50 on average, each level best-responds to the one below.
-const LEVELS = [0, 1, 2, 3, 4, 5].map(k => ({ k, value: 50 * Math.pow(2 / 3, k) }));
-
-const r2 = x => Math.round(x * 100) / 100;
-
-function levelOf(guess) {
-  if (guess > 50 + 1e-9) return 'over';   // only a level-0 coin flip or a troll goes here
-  if (guess < 0.5) return 'nash';
-  // nearest benchmark
-  let best = LEVELS[0];
-  for (const L of LEVELS) if (Math.abs(guess - L.value) < Math.abs(guess - best.value)) best = L;
-  return 'L' + best.k;
+function newRound(number) {
+  return { number, status: 'waiting', players: new Map(), result: null };
 }
 
-function computeResults() {
-  const list = [...game.entries.entries()].map(([cid, e]) => ({ cid, ...e }));
+let round = newRound(1);
+let history = []; // one summary per revealed round
+let latest = null; // full public result of the most recent revealed round
+let recent = []; // newest arrivals, for the join slide's ticker
+let arrivals = 0;
+
+/* ------------------------------------------------------------ cleaning up */
+
+const BAD_WORDS = /(f+u+c+k|sh[i1]t|c+u+n+t|n[i1]gg|f[a@]gg|b[i1]tch|wh[o0]re|slut|rap(e|ist)|nazi|hitler|a+ss+h[o0]le|porn)/i;
+
+function cleanText(value, max) {
+  const s = String(value == null ? '' : value)
+    .normalize('NFKC')
+    .replace(/[\u0000-\u001f\u007f<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
+  return BAD_WORDS.test(s) ? '' : s;
+}
+
+function cleanPid(value) {
+  const s = String(value || '');
+  return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null;
+}
+
+// Accepts 33, "33", "33.3" or "33,3"; keeps two decimals; null if out of range.
+function parseGuess(value) {
+  const raw = String(value == null ? '' : value).trim().replace(',', '.');
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/* --------------------------------------------------------------- scoring */
+
+function computeResult(players) {
+  const list = [...players.values()];
   const n = list.length;
-  if (!n) return { n: 0 };
+  if (n === 0) {
+    return { n: 0, avg: null, target: null, median: null, zeros: 0, guesses: [], winners: [], winningGuesses: [], ranks: new Map() };
+  }
+  const avg = list.reduce((s, p) => s + p.guess, 0) / n;
+  const target = (2 / 3) * avg;
+  const dist = (p) => Math.abs(p.guess - target);
+  const sorted = list.slice().sort((a, b) => dist(a) - dist(b) || a.at - b.at);
+  const best = dist(sorted[0]);
+  const winners = sorted.filter((p) => dist(p) - best <= EPS);
 
-  const values = list.map(e => e.guess).sort((a, b) => a - b);
-  const mean = values.reduce((s, v) => s + v, 0) / n;
-  const median = n % 2 ? values[(n - 1) / 2] : (values[n / 2 - 1] + values[n / 2]) / 2;
-  const target = (2 / 3) * mean;
-
-  const ranked = list
-    .map(e => ({ ...e, dist: Math.abs(e.guess - target) }))
-    .sort((a, b) => a.dist - b.dist);
-  const ranks = {};
+  // Ties share a rank, so every winner is #1.
+  const ranks = new Map();
   let rank = 1;
-  ranked.forEach((e, i) => {
-    if (i > 0 && e.dist - ranked[i - 1].dist > 1e-9) rank = i + 1;
-    ranks[e.cid] = rank;
+  let prev = null;
+  sorted.forEach((p, i) => {
+    const d = dist(p);
+    if (prev !== null && d - prev > EPS) rank = i + 1;
+    prev = d;
+    ranks.set(p.pid, rank);
   });
-  const winners = ranked
-    .filter(e => e.dist - ranked[0].dist <= 1e-9)
-    .map(e => ({ name: e.name, guess: e.guess }));
 
-  // 20 bins of width 5; 100 goes in the last bin.
-  const bins = new Array(20).fill(0);
-  values.forEach(v => { bins[Math.min(19, Math.floor(v / 5))]++; });
-
-  const levels = { over: 0, L0: 0, L1: 0, L2: 0, L3: 0, L4: 0, L5: 0, nash: 0 };
-  values.forEach(v => { levels[levelOf(v)]++; });
-
+  const guesses = list.map((p) => p.guess).sort((a, b) => a - b);
+  const median = n % 2 ? guesses[(n - 1) / 2] : (guesses[n / 2 - 1] + guesses[n / 2]) / 2;
   return {
     n,
-    mean: r2(mean),
-    median: r2(median),
-    target: r2(target),
-    min: values[0],
-    max: values[n - 1],
-    winners,
-    bins,
-    levels,
+    avg,
+    target,
+    median,
+    zeros: guesses.filter((g) => g < 1).length,
+    guesses,
+    winners: winners.map(publicPlayer),
+    winningGuesses: [...new Set(winners.map((w) => w.guess))].sort((a, b) => a - b),
     ranks,
-    zeros: values.filter(v => v === 0).length,
-    hundreds: values.filter(v => v === 100).length
   };
 }
 
-function publicState(cid) {
-  const me = cid && game.entries.get(cid);
-  const out = {
-    round: game.round,
-    phase: game.phase,
-    count: game.entries.size,
-    me: me ? { name: me.name, guess: me.guess } : null,
-    history: game.history,
-    levels: LEVELS.map(L => ({ k: L.k, value: r2(L.value) }))
+function publicPlayer(p) {
+  return { name: p.name, school: p.school, guess: p.guess, bot: !!p.bot };
+}
+
+function publicResult(r, number) {
+  return {
+    round: number,
+    n: r.n,
+    avg: r.avg,
+    target: r.target,
+    median: r.median,
+    zeros: r.zeros,
+    guesses: r.guesses,
+    winningGuesses: r.winningGuesses,
+    winners: r.winners.slice(0, 12),
+    winnersTotal: r.winners.length,
   };
-  if (game.phase === 'revealed' && game.results) {
-    const { ranks, ...rest } = game.results;
-    out.results = rest;
-    if (me) out.me.rank = ranks[cid];
-  }
-  return out;
 }
 
-// ---------------------------------------------------------------------------
-// Student API
-// ---------------------------------------------------------------------------
-router.get('/api/state', (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  res.json(publicState(String(req.query.cid || '')));
-});
+/* --------------------------------------------------------------- players */
 
-router.post('/api/guess', (req, res) => {
-  const { cid, name, guess } = req.body || {};
-  if (game.phase !== 'open') {
-    return res.status(409).json({ error: 'The game is closed. The professor has spoken.' });
-  }
-  if (typeof cid !== 'string' || cid.length < 8 || cid.length > 64) {
-    return res.status(400).json({ error: 'Your phone forgot who it is. Reload the page?' });
-  }
-  const g = Number(guess);
-  if (!Number.isFinite(g) || g < 0 || g > 100) {
-    return res.status(400).json({ error: 'Pick a number from 0 to 100. Those are the rules, Hoss.' });
-  }
-  if (!game.entries.has(cid) && game.entries.size >= MAX_ENTRIES) {
-    return res.status(429).json({ error: 'The room is full. Impressive turnout!' });
-  }
-  const cleanName = String(name || '').replace(/[<>]/g, '').trim().slice(0, 24) || 'Anonymous';
-  game.entries.set(cid, { name: cleanName, guess: Math.round(g * 100) / 100, bot: false });
-  res.json(publicState(cid));
-});
-
-// ---------------------------------------------------------------------------
-// Teacher API (needs the key)
-// ---------------------------------------------------------------------------
-function requireKey(req, res, next) {
-  if (req.get('x-teacher-key') !== TEACHER_KEY) {
-    return res.status(403).json({ error: 'Wrong teacher key.' });
-  }
-  next();
+function addPlayer({ pid, name, school, guess, bot }) {
+  arrivals += 1;
+  const p = {
+    pid,
+    name: name || `Wolverine #${arrivals}`,
+    school: school || '',
+    guess,
+    bot: !!bot,
+    at: Date.now(),
+  };
+  round.players.set(pid, p);
+  recent.unshift({ id: arrivals, name: p.name, school: p.school, bot: p.bot });
+  recent = recent.slice(0, 8);
+  return p;
 }
 
-router.get('/api/teacher/check', requireKey, (req, res) => res.json({ ok: true }));
+const BOT_NAMES = [
+  'Ann Arbot', 'Bot Schembechler', 'Fielding H. Bot', 'Robo-Wolverine', 'The Maize-imizer',
+  'HAIL-9000', 'The Diag-onalizer', 'Big House Bot', 'Keynes-o-Tron', 'Nash Bot',
+  'Level-K Kid', 'Bayesian Buckeye', 'Sparty-Bot', 'Go Blue Screen', 'Victor Valiant',
+  'Botsy Blue', 'The Optimist-Bot', 'Rational Ricky', 'Two-Thirds Terry', 'Overthinker 3000',
+];
 
-const BOT_NAMES = ['RoboBronco', 'Wolverine 3000', 'HAL 9000', 'Level-k Larry', 'Nash Bot',
-  'Coin Flipper', 'Rational Rita', 'Overthinking Otto', 'Keynes-o-tron', 'Bayesian Bob'];
+function normal(mean, sd) {
+  const u = 1 - Math.random();
+  const v = Math.random();
+  return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
 
+// A rough mix of the level-k types that show up in real classrooms.
 function botGuess() {
-  // A rough mix of the levels people actually play, plus some noise and a few trolls.
-  const u = Math.random();
-  const noise = () => (Math.random() - 0.5) * 8;
-  let g;
-  if (u < 0.15) g = Math.random() * 100;          // level 0
-  else if (u < 0.40) g = 33.3 + noise();          // level 1
-  else if (u < 0.70) g = 22.2 + noise();          // level 2
-  else if (u < 0.82) g = 14.8 + noise();          // level 3
-  else if (u < 0.92) g = Math.random() * 3;       // Nash-ish
-  else if (u < 0.96) g = 100;                     // troll
-  else g = 9.9 + noise();
-  return Math.round(Math.max(0, Math.min(100, g)));
+  const r = Math.random();
+  const g =
+    r < 0.10 ? Math.random() * 100 : // level 0: anything goes
+    r < 0.18 ? normal(50, 7) : //        level 0: "about half"
+    r < 0.42 ? normal(33.3, 2.5) : //    level 1
+    r < 0.63 ? normal(22.2, 2) : //      level 2
+    r < 0.74 ? normal(14.8, 1.5) : //    level 3
+    r < 0.81 ? normal(9.9, 1.5) : //     level 4
+    r < 0.92 ? (Math.random() < 0.7 ? 0 : 1) : // Nash, or nearly
+    66.7 + Math.random() * 33.3; //      didn't read the rules
+  const v = Math.min(100, Math.max(0, g));
+  return Math.random() < 0.8 ? Math.round(v) : Math.round(v * 10) / 10;
 }
 
-router.post('/api/teacher/:action', requireKey, (req, res) => {
-  const action = req.params.action;
-  switch (action) {
-    case 'open':
-      if (game.phase === 'revealed') return res.status(409).json({ error: 'Start a new round first.' });
-      game.phase = 'open';
-      break;
-    case 'close':
-      if (game.phase === 'open') game.phase = 'closed';
-      break;
-    case 'reveal':
-      if (game.phase === 'open') game.phase = 'closed';
-      game.results = computeResults();
-      game.phase = 'revealed';
-      break;
-    case 'newround':
-      if (game.results && game.results.n) {
-        const { mean, target, n, winners } = game.results;
-        game.history.push({ round: game.round, n, mean, target, winning: winners[0].guess });
-      }
-      game.round += 1;
-      game.entries.clear();
-      game.results = null;
-      game.phase = 'lobby';
-      break;
-    case 'reset':
-      game.round = 1;
-      game.entries.clear();
-      game.results = null;
-      game.history = [];
-      game.phase = 'lobby';
-      break;
-    case 'bots': {
-      if (game.phase === 'revealed') return res.status(409).json({ error: 'Start a new round first.' });
-      const k = Math.max(1, Math.min(200, Number((req.body || {}).count) || 25));
-      for (let i = 0; i < k; i++) {
-        const cid = 'bot-' + Math.random().toString(36).slice(2, 12);
-        const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)] + ' #' + Math.floor(Math.random() * 900 + 100);
-        game.entries.set(cid, { name, guess: botGuess(), bot: true });
-      }
-      break;
-    }
-    default:
-      return res.status(404).json({ error: 'Unknown action.' });
+let botSerial = 0;
+function addBots(n) {
+  const thisRound = round;
+  const spread = Math.min(3000, 60 * n); // trickle in, so the counter climbs
+  for (let i = 0; i < n; i++) {
+    setTimeout(() => {
+      if (round !== thisRound || round.status === 'revealed' || round.players.size >= MAX_PLAYERS) return;
+      botSerial += 1;
+      const base = BOT_NAMES[(botSerial - 1) % BOT_NAMES.length];
+      const lap = Math.floor((botSerial - 1) / BOT_NAMES.length);
+      addPlayer({
+        pid: 'bot-' + crypto.randomBytes(6).toString('hex'),
+        name: lap ? `${base} ${lap + 1}` : base,
+        school: 'Robot U.',
+        guess: botGuess(),
+        bot: true,
+      });
+    }, Math.round((i / n) * spread));
   }
-  res.json(publicState());
+}
+
+/* ------------------------------------------------------------ responses */
+
+function baseUrl(req) {
+  return APP_URL || `${req.protocol}://${req.get('host')}`;
+}
+
+function deckState(req, isTeacher) {
+  const base = baseUrl(req);
+  return {
+    build: BUILD,
+    round: round.number,
+    status: round.status,
+    count: round.players.size,
+    recent,
+    history,
+    latest,
+    isTeacher,
+    join: { url: base + '/play', short: base.replace(/^https?:\/\//, '') },
+  };
+}
+
+function isTeacherReq(req) {
+  const given = Buffer.from(String(req.get('x-teacher-key') || ''));
+  const want = Buffer.from(TEACHER_KEY);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
+
+function httpError(status, message) {
+  const e = new Error(message);
+  e.status = status;
+  return e;
+}
+
+/* ----------------------------------------------------------------- API */
+
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
 });
 
-// ---------------------------------------------------------------------------
-// QR code pointing at the student page
-// ---------------------------------------------------------------------------
-function playUrl(req) {
-  const base = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
-  return base.replace(/\/$/, '') + '/play';
-}
+app.get('/api/health', (req, res) => res.json({ ok: true, build: BUILD }));
 
-router.get('/api/config', (req, res) => res.json({ playUrl: playUrl(req) }));
+// Phones: the round's status, your own guess, and (after the reveal) how you did.
+app.get('/api/state', (req, res) => {
+  const pid = cleanPid(req.query.pid);
+  const p = pid ? round.players.get(pid) : null;
+  const out = {
+    round: round.number,
+    status: round.status,
+    count: round.players.size,
+    me: p ? { guess: p.guess, name: p.name, school: p.school } : null,
+    result: null,
+  };
+  if (round.status === 'revealed' && round.result) {
+    const r = round.result;
+    out.result = {
+      n: r.n,
+      avg: r.avg,
+      target: r.target,
+      winningGuesses: r.winningGuesses,
+      winners: r.winners.slice(0, 5).map((w) => w.name),
+      winnersTotal: r.winners.length,
+      you: p
+        ? { guess: p.guess, distance: Math.abs(p.guess - r.target), rank: r.ranks.get(pid), won: r.ranks.get(pid) === 1 }
+        : null,
+    };
+  }
+  res.json(out);
+});
 
-router.get('/api/qr.svg', async (req, res) => {
+app.post('/api/guess', (req, res) => {
+  const b = req.body || {};
+  const pid = cleanPid(b.pid);
+  if (!pid) return res.status(400).json({ error: 'Your phone lost its player ID. Reload the page and try again.' });
+  if (round.status !== 'open') {
+    const error = round.status === 'waiting' ? "Guessing isn't open yet. Hang tight." : 'Too late! Guessing just closed.';
+    return res.status(409).json({ error, status: round.status });
+  }
+  const guess = parseGuess(b.guess);
+  if (guess === null) return res.status(400).json({ error: 'Pick a number from 0 to 100.' });
+
+  const name = cleanText(b.name, 24);
+  const school = cleanText(b.school, 32);
+  let p = round.players.get(pid);
+  if (!p) {
+    if (round.players.size >= MAX_PLAYERS) return res.status(503).json({ error: 'The stadium is full. Seriously.' });
+    p = addPlayer({ pid, name, school, guess });
+  } else {
+    p.guess = guess;
+    if (name) p.name = name;
+    p.school = school;
+    p.at = Date.now();
+  }
+  res.json({ ok: true, me: { guess: p.guess, name: p.name, school: p.school }, count: round.players.size });
+});
+
+// Projector: anyone may watch; nothing about guesses leaks before the reveal.
+app.get('/api/deck', (req, res) => res.json(deckState(req, isTeacherReq(req))));
+
+const ACTIONS = {
+  check() {},
+  open() {
+    if (round.status === 'revealed') throw httpError(409, 'This round is over. Start a new round first.');
+    round.status = 'open';
+  },
+  close() {
+    if (round.status === 'open') round.status = 'closed';
+  },
+  reveal() {
+    if (round.status === 'revealed') return;
+    round.status = 'revealed';
+    round.result = computeResult(round.players);
+    latest = publicResult(round.result, round.number);
+    const r = round.result;
+    history = history
+      .filter((h) => h.round !== round.number)
+      .concat({ round: round.number, n: r.n, avg: r.avg, target: r.target, winningGuesses: r.winningGuesses });
+  },
+  newround(body) {
+    round = newRound(round.number + 1);
+    recent = [];
+    if (body && body.open) round.status = 'open';
+  },
+  reset() {
+    round = newRound(1);
+    history = [];
+    latest = null;
+    recent = [];
+    arrivals = 0;
+    botSerial = 0;
+  },
+  bots(body) {
+    if (round.status === 'revealed') throw httpError(409, 'Robots only play before the reveal.');
+    const n = Math.max(1, Math.min(300, parseInt(body && body.n, 10) || 25));
+    addBots(n);
+  },
+};
+
+app.post('/api/admin/:action', (req, res) => {
+  if (!isTeacherReq(req)) return res.status(401).json({ error: 'That teacher key is not right.' });
+  const fn = ACTIONS[req.params.action];
+  if (!fn) return res.status(404).json({ error: 'Unknown action.' });
   try {
-    const svg = await QRCode.toString(playUrl(req), {
-      type: 'svg', margin: 1, errorCorrectionLevel: 'M',
-      color: { dark: '#00274C', light: '#FFFFFF' }
-    });
-    res.type('image/svg+xml').set('Cache-Control', 'no-store').send(svg);
+    fn(req.body || {});
   } catch (e) {
-    res.status(500).send('QR failed');
+    return res.status(e.status || 500).json({ error: e.message });
+  }
+  res.json(deckState(req, true));
+});
+
+/* ------------------------------------------------------------------- QR */
+
+const qrCache = new Map();
+app.get('/qr.svg', async (req, res, next) => {
+  try {
+    const url = baseUrl(req) + '/play';
+    if (!qrCache.has(url)) {
+      qrCache.set(url, await QRCode.toString(url, {
+        type: 'svg',
+        errorCorrectionLevel: 'H', // room for the Block M in the middle
+        margin: 1,
+        color: { dark: '#00274C', light: '#FFFFFF' },
+      }));
+    }
+    res.type('image/svg+xml').set('Cache-Control', 'no-cache').send(qrCache.get(url));
+  } catch (e) {
+    next(e);
   }
 });
 
-router.get('/', (req, res) => res.redirect('/teacher'));
+/* ---------------------------------------------------------------- pages */
 
-module.exports = router;
+const PUBLIC = path.join(__dirname, 'public');
+const page = (file) => (req, res) => res.sendFile(path.join(PUBLIC, file));
+
+app.get('/', page('play.html'));
+app.get('/play', page('play.html'));
+app.get('/teacher', page('teacher.html'));
+app.use(express.static(PUBLIC, { index: false }));
+
+app.use((req, res) => {
+  res.status(404).type('html').send(
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>Fumble</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#00274C;color:#fff;font:600 20px system-ui;text-align:center">' +
+    '<div><div style="font-size:64px">🏈</div><h1 style="color:#FFCB05;margin:.2em 0">Fumble.</h1>' +
+    '<p>That page doesn\'t exist.</p><p><a style="color:#FFCB05" href="/play">Play the game</a></p></div>'
+  );
+});
+
+module.exports = app;

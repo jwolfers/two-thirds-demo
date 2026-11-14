@@ -3,215 +3,207 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>⅔ of a Chance · Teacher</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2300274C'/><text x='50' y='70' font-size='56' text-anchor='middle' fill='%23FFCB05' font-family='Arial' font-weight='bold'>⅔</text></svg>">
-<link rel="stylesheet" href="brand.css">
-<link rel="stylesheet" href="teacher.css">
+<title>The 2/3 Game · Projector</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&family=Graduate&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/brand.css">
+<link rel="stylesheet" href="/teacher.css">
 </head>
 <body>
-<div class="stripe"></div>
-<header class="topbar">
-  <div class="brand">
-    <span class="mark" data-mark="M" style="width:2.2rem"></span>
-    <span class="vs">×</span>
-    <span class="mark" data-mark="W" style="width:2.2rem"></span>
-    <span class="brand-text">⅔ of a Chance <small>Ann Arbor → Kalamazoo Exchange Program</small></span>
+
+<div id="stage" data-slide="title">
+
+  <!-- Brand and live status, on every slide but the title -->
+  <div id="chrome">
+    <div class="brand"><span class="brand-m" data-blockm></span><span class="brand-t">The <span data-frac></span> Game</span></div>
+    <div class="live"><span id="chRound" class="chip">Round 1</span><span id="chStatus" class="chip status waiting">Waiting</span></div>
   </div>
-  <div class="status">
-    <span id="phasePill" class="pill lobby"><span class="dot"></span><span id="phaseText">Lobby</span></span>
-    <span class="pill"><span id="countTop">0</span>&nbsp;guesses</span>
-    <span class="pill">Round <span id="roundTop">1</span></span>
-  </div>
-</header>
 
-<main id="deck">
-
-  <!-- 0 · Title ---------------------------------------------------------- -->
-  <section class="slide title-slide" data-title="Welcome">
-    <div class="split">
-      <div class="half blue-half"><span class="mark big-mark" data-mark="M"></span><p>Go Blue</p></div>
-      <div class="half brown-half"><span class="mark big-mark" data-mark="W"></span><p>Go Broncos</p></div>
+  <!-- 1. Title -->
+  <section class="slide slide-title" data-slide="title">
+    <svg class="wings" viewBox="0 0 1920 1080" aria-hidden="true">
+      <path d="M1920,110 L1920,330 Q1600,400 1250,540 Q1540,290 1920,110Z"/>
+      <path d="M1920,465 L1920,615 L1250,540Z"/>
+      <path d="M1920,970 L1920,750 Q1600,680 1250,540 Q1540,790 1920,970Z"/>
+    </svg>
+    <div class="title-wrap">
+      <div class="title-m" data-blockm></div>
+      <div class="kicker">A Keynesian beauty contest</div>
+      <h1 class="mega">The <span class="maize"><span data-frac></span></span> Game</h1>
+      <p class="lede">Guess two-thirds of the average.<br>Outthink the room.</p>
+      <p class="byline">University of Michigan · Economics 101 · EconEd edition</p>
     </div>
-    <div class="title-card">
-      <h1>⅔ of a Chance</h1>
-      <p class="sub">The Guess-Two-Thirds-of-the-Average Game</p>
-      <p class="tag">A Wolverine walks into Bronco country and asks everyone to pick a number.<br>No, that's not the start of a joke. It's the start of game theory.</p>
-      <p class="byline">Justin Wolfers · University of Michigan · visiting Western Michigan University</p>
-    </div>
+    <p class="pressbox"><b>Press box</b>The only contest in Ann Arbor this fall with a guaranteed winner.</p>
   </section>
 
-  <!-- 1 · Rules ---------------------------------------------------------- -->
-  <section class="slide" data-title="The rules">
-    <h2 class="slide-h">The rules <span class="h-note">(there are only three, we promise)</span></h2>
-    <ol class="rules">
-      <li><span class="num">1</span><div><b>Pick a number</b> from 0 to 100. Any number. Decimals welcome.</div></li>
-      <li><span class="num">2</span><div>We take the <b>average</b> of everyone's guesses.</div></li>
-      <li><span class="num">3</span><div>The winner is whoever is <b>closest to ⅔ of the average</b>.</div></li>
-    </ol>
-    <div class="prize">
-      <span class="trophy">🏆</span>
-      <div><b>The prize:</b> eternal glory, valid in both Ann Arbor and Kalamazoo.
-        <small>Ties split the glory. Glory is non-rival, so nobody gets less. Ask your econ professor.</small></div>
-    </div>
-  </section>
-
-  <!-- 2 · Join & play ---------------------------------------------------- -->
-  <section class="slide join-slide" data-title="Join">
-    <div class="join-left">
-      <h2 class="slide-h">Grab your phone</h2>
-      <div class="qr-wrap"><img id="qr" src="api/qr.svg" alt="QR code to join the game"></div>
-      <p class="join-url">or visit <b id="playUrl">…/play</b></p>
-    </div>
-    <div class="join-right">
-      <div class="big-count"><span id="countBig">0</span><small>guesses locked in</small></div>
-      <p id="joinMsg" class="join-msg">Scan the code. The game opens in a moment.</p>
-      <p id="waitJoke" class="wait-joke"></p>
-      <div class="teacher-only join-controls">
-        <button class="btn" data-act="open">Open the game</button>
-        <button class="btn gold" data-act="close">Close the game</button>
-        <button class="btn brown" data-act="reveal">Reveal results →</button>
+  <!-- 2. Rules -->
+  <section class="slide" data-slide="rules">
+    <header class="head"><div class="kicker">How to play</div><h1>Pick a number from 0 to 100.</h1></header>
+    <div class="rules-grid">
+      <div class="rule">
+        <div class="rule-n">1</div>
+        <h3>Everyone guesses</h3>
+        <p>Any number from 0 to 100. Decimals welcome.</p>
+      </div>
+      <div class="rule">
+        <div class="rule-n">2</div>
+        <h3>We average the guesses</h3>
+        <p>Every guess in the room counts, including yours.</p>
+      </div>
+      <div class="rule hot">
+        <div class="rule-n">3</div>
+        <h3>Closest to <span data-frac></span> of the average wins</h3>
+        <p>Not the average. Two-thirds of it. Ties share the glory.</p>
       </div>
     </div>
+    <div class="example">Example: if the average guess is <b>75</b>, the target is <b><span data-frac></span> × 75 = 50</b>.</div>
+    <p class="pressbox"><b>Press box</b>Yes, you can pick a decimal. No, you can't pick "fire the offensive coordinator."</p>
   </section>
 
-  <!-- 3 · Results -------------------------------------------------------- -->
-  <section class="slide results-slide" data-title="Results">
-    <div id="preReveal" class="pre-reveal">
-      <div class="drum">🥁</div>
-      <h2>The envelope, please…</h2>
-      <p id="preMsg">Waiting for guesses.</p>
-      <button class="btn teacher-only big-btn" data-act="reveal">Reveal the winner</button>
-    </div>
-    <div id="postReveal" class="post-reveal" hidden>
-      <div class="stats">
-        <div class="stat"><small>Guesses</small><b id="sN">0</b></div>
-        <div class="stat"><small>Average</small><b id="sMean">0</b></div>
-        <div class="stat hot"><small>⅔ × average = target</small><b id="sTarget">0</b></div>
-        <div class="stat win"><small>Winning guess</small><b id="sWin">0</b></div>
-      </div>
-      <div class="results-body">
-        <div class="chart-card">
-          <svg id="hist" viewBox="0 0 1000 440" preserveAspectRatio="xMidYMid meet"></svg>
+  <!-- 3. Join -->
+  <section class="slide" data-slide="join">
+    <header class="head"><div class="kicker">Grab your phone · scan to play</div></header>
+    <div class="join-grid">
+      <div class="qr-col">
+        <div class="qr-card">
+          <img id="qrImg" src="/qr.svg" alt="QR code that opens the game">
+          <div class="qr-badge" data-blockm></div>
         </div>
-        <div class="winner-card">
-          <div class="trophy big">🏆</div>
-          <h3 id="winHead">Winner</h3>
-          <ul id="winList"></ul>
-          <p id="funFacts" class="fun-facts"></p>
+        <div class="join-url">or type <b id="joinUrl">…</b></div>
+      </div>
+      <div class="count-col">
+        <div id="joinStatus" class="status-pill waiting">Not open yet</div>
+        <div class="count-big"><span id="joinCount">0</span></div>
+        <div id="joinCountLabel" class="count-label">guesses in</div>
+        <div id="joinCapacity" class="capacity"></div>
+        <div id="joinActions" class="actions teacher-only"></div>
+        <div class="ticker">
+          <div class="ticker-label">Now entering the Big House</div>
+          <div id="ticker" class="ticker-list"></div>
         </div>
       </div>
     </div>
+    <p class="pressbox"><b>Press box</b>Plenty of good seats still available. Also true at the Big House by the fourth quarter.</p>
   </section>
 
-  <!-- 4 · Level-k thinking ----------------------------------------------- -->
-  <section class="slide" data-title="Level-k thinking">
-    <h2 class="slide-h">How deep did you think? <span class="h-note">Level-k reasoning</span></h2>
-    <div class="levelk">
-      <div id="ladder" class="ladder"></div>
-      <div class="levelk-side">
-        <p><b>Level 0</b> doesn't think about anyone else and picks at random, so the average guess is 50.</p>
-        <p><b>Level 1</b> assumes everyone else is level 0, so they guess ⅔ × 50 ≈ <b>33</b>.</p>
-        <p><b>Level 2</b> assumes everyone else is level 1, so they guess ⅔ × 33 ≈ <b>22</b>.</p>
-        <p>Each extra level multiplies by another ⅔. Keep going forever and you hit <b>0</b>.</p>
-        <p class="callout" id="impliedK">Reveal the results to see where this room landed.</p>
+  <!-- 4. Results -->
+  <section class="slide" data-slide="results">
+    <header class="head"><div id="resKicker" class="kicker">The results</div><h1 id="resTitle">Where the room landed</h1></header>
+    <div id="resLocked" class="locked">
+      <div class="locked-icon">🔒</div>
+      <h2>Results under wraps</h2>
+      <p id="resLockedText"></p>
+      <div id="resActions" class="actions teacher-only"></div>
+    </div>
+    <div id="resBody" hidden>
+      <div class="scoreboard">
+        <div class="sb"><div class="sb-l">Players</div><div id="sbN" class="sb-v">–</div></div>
+        <div class="sb"><div class="sb-l">Average guess</div><div id="sbAvg" class="sb-v">–</div></div>
+        <div class="sb hot"><div class="sb-l">Target: <span data-frac></span> × average</div><div id="sbTarget" class="sb-v">–</div></div>
+        <div class="sb"><div class="sb-l">Winning guess</div><div id="sbWin" class="sb-v">–</div></div>
+      </div>
+      <div id="resField" class="field-wrap"></div>
+      <div id="winner" class="winner"></div>
+    </div>
+    <p id="resPress" class="pressbox"><b>Press box</b>No peeking. This is the most suspense Michigan fans have felt since kickoff.</p>
+  </section>
+
+  <!-- 5. Level-k -->
+  <section class="slide" data-slide="levelk">
+    <header class="head"><div class="kicker">Why did we get that?</div><h1>Level-<i>k</i> thinking: how many steps ahead are you?</h1></header>
+    <div id="lkField" class="field-wrap"></div>
+    <div id="lkChips" class="lk-chips"></div>
+    <p id="lkTake" class="takeaway"></p>
+  </section>
+
+  <!-- 6. Nash -->
+  <section class="slide" data-slide="nash">
+    <header class="head"><div class="kicker">The theory</div><h1>Nash equilibrium: march the ball to zero</h1></header>
+    <div id="nashChain" class="chain"></div>
+    <div id="nashField" class="field-wrap"></div>
+    <div id="nashText" class="nash-text"></div>
+    <p id="nashNote" class="nash-note"></p>
+    <p id="nashPress" class="pressbox"><b>Press box</b>Each step moves the ball another third of the way down the field. Michigan's offense would kill for that kind of progress.</p>
+  </section>
+
+  <!-- 7. Theory meets the room -->
+  <section class="slide" data-slide="theory">
+    <header class="head"><div class="kicker">Theory meets the room</div><h1 id="thTitle">Nash said 0. This room said…</h1></header>
+    <div class="th-grid">
+      <div class="th-chart">
+        <h3>Average guess</h3>
+        <div id="thBars" class="hbars"></div>
+        <p class="source">Newspaper contests, 1997–98, 1,476–3,696 readers each. Bosch-Domènech, Montalvo, Nagel &amp; Satorra, <i>AER</i> (2002).</p>
+      </div>
+      <ol class="lessons">
+        <li><b>Knowing the equilibrium isn't the same as winning.</b> Zero is only the best guess if everyone else plays it too. <span id="thZeros"></span></li>
+        <li><b>What you need is common knowledge of rationality.</b> I'm rational, you're rational, I know you're rational, you know I know… Most people stop after a step or two.</li>
+        <li><b>Keynes's beauty contest.</b> In markets you win by predicting what others will think, not what's "really" best. <span class="cite">(<i>General Theory</i>, 1936, ch. 12)</span></li>
+      </ol>
+    </div>
+    <p class="pressbox"><b>Press box</b>Being right in theory and losing in practice: welcome to economics, and to Michigan football.</p>
+  </section>
+
+  <!-- 8. Play again -->
+  <section class="slide" data-slide="again">
+    <header class="head"><div id="agKicker" class="kicker">Round 2</div><h1>Now you know the theory. Play again.</h1></header>
+    <div class="ag-grid">
+      <div id="agChart" class="ag-chart"></div>
+      <div class="ag-side">
+        <p>In the lab, repeat play drives guesses toward zero as people learn what everyone else will do <span class="cite">(Nagel, 1995)</span>.</p>
+        <p class="ag-q">Will this room learn faster than our secondary?</p>
+        <div id="agActions" class="actions teacher-only"></div>
       </div>
     </div>
+    <p class="pressbox"><b>Press box</b>A second chance. Something Michigan fans can only dream about on Saturdays.</p>
   </section>
 
-  <!-- 5 · Nash equilibrium ----------------------------------------------- -->
-  <section class="slide" data-title="Nash equilibrium">
-    <h2 class="slide-h">The Nash equilibrium <span class="h-note">Iterated elimination of dominated strategies</span></h2>
-    <div class="nash">
-      <div class="nash-line-wrap">
-        <div class="nash-axis">
-          <div id="nashLive" class="nash-live"></div>
-          <div id="nashDead" class="nash-dead"></div>
-          <div class="nash-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
-        </div>
-        <div class="nash-readout"><span>Still a sensible guess:</span> <b id="nashRange">0 to 100</b></div>
-        <div class="nash-buttons">
-          <button class="btn" id="nashStep">Next step →</button>
-          <button class="btn ghost" id="nashAuto">Run to the end</button>
-          <button class="btn ghost" id="nashReset">Reset</button>
-        </div>
-      </div>
-      <div class="nash-text">
-        <p id="nashExplain" class="nash-explain">Even if everyone guessed 100, the target would be ⅔ × 100 ≈ 66.7. So any guess above 66.7 can never win. Cross it out.</p>
-        <div class="callout eq">
-          <b>Nash equilibrium: everyone guesses 0.</b><br>
-          If everyone else picks 0, your best response is 0 too. Nobody wants to deviate, and that's exactly what makes it an equilibrium.
-        </div>
-        <p class="small-note">The catch: you only get here if everyone is rational, knows everyone is rational, knows that everyone knows… all the way down. Economists call it <i>common knowledge of rationality</i>. Undergrads call it "a lot."</p>
-      </div>
+  <!-- 9. Steal this -->
+  <section class="slide" data-slide="steal">
+    <header class="head"><div class="kicker">For the instructors</div><h1>Steal this game</h1></header>
+    <div class="arch">
+      <div class="node"><div class="node-i"><svg class="icon" viewBox="0 0 60 96" aria-hidden="true"><rect x="6" y="4" width="48" height="88" rx="9"/><line x1="24" y1="80" x2="36" y2="80"/><rect x="18" y="24" width="24" height="24" rx="2"/></svg></div><h3>Phones</h3><p>Scan, guess, see how you did. No app, no login.</p></div>
+      <div class="arrow"><span>guess →</span><span>← status</span></div>
+      <div class="node hot"><div class="node-i" data-blockm></div><h3>A tiny server</h3><p>About 400 lines of Node. Holds one round in memory.</p></div>
+      <div class="arrow"><span>← control</span><span>results →</span></div>
+      <div class="node"><div class="node-i"><svg class="icon" viewBox="0 0 130 96" aria-hidden="true"><rect x="5" y="5" width="120" height="70" rx="6"/><line x1="65" y1="75" x2="65" y2="89"/><line x1="40" y1="90" x2="90" y2="90"/><polyline points="22,58 46,40 64,50 104,24"/></svg></div><h3>This deck</h3><p>Polls every 1.5 seconds. Opens, closes, reveals.</p></div>
     </div>
+    <ul class="steal-list">
+      <li>Free hosting on Render. Total cost: $0.</li>
+      <li>Built with Claude Code from a one-paragraph description.</li>
+      <li>Code to copy: <b>github.com/jwolfers/two-thirds-demo</b></li>
+    </ul>
+    <p class="pressbox"><b>Press box</b>Hosting: $0. Michigan's NIL budget wishes it could say the same.</p>
   </section>
+</div>
 
-  <!-- 6 · Theory meets the room ------------------------------------------ -->
-  <section class="slide" data-title="Theory vs. the room">
-    <h2 class="slide-h">Theory meets the room</h2>
-    <div class="versus">
-      <div class="vs-card theory"><small>Nash says the target is</small><b>0</b><span>Infinitely rational players</span></div>
-      <div class="vs-mid">vs.</div>
-      <div class="vs-card room"><small>This room's target was</small><b id="roomTarget">?</b><span id="roomSub">Actual humans</span></div>
-    </div>
-    <div class="lessons">
-      <div class="lesson"><h3>Being right isn't enough</h3><p>Guessing 0 is "correct" in theory, but it only wins if everyone else got there too. You win by being <b>exactly one step ahead of the crowd</b>, not infinitely ahead.</p></div>
-      <div class="lesson"><h3>Keynes's beauty contest</h3><p>Keynes compared investing to a newspaper beauty contest where you win by picking the face <i>others</i> will pick. Markets reward predicting the crowd, which is how bubbles can form.</p></div>
-      <div class="lesson"><h3>Other rooms</h3><p>In Rosemarie Nagel's 1995 lab experiments, first-round averages landed in the mid-30s. In Richard Thaler's 2005 <i>Financial Times</i> contest, the winning guess was 13.</p></div>
-    </div>
-  </section>
+<!-- Presenter dock: fades out when the mouse is still -->
+<nav id="dock" aria-label="Presenter controls">
+  <button data-act="prev" title="Back (←)">◀</button>
+  <div id="dots" class="dots"></div>
+  <button data-act="next" title="Next (→)">▶</button>
+  <span class="sep"></span>
+  <span id="dockStatus" class="dock-status">…</span>
+  <span class="teacher-only dock-group">
+    <button data-act="open" title="Open guessing (O)">Open</button>
+    <button data-act="close" title="Close guessing (C)">Close</button>
+    <button data-act="reveal" title="Reveal results (R)">Reveal</button>
+    <button data-act="newround" title="New round (N)">New round</button>
+    <span class="sep"></span>
+    <button data-act="bots" title="Add 25 robot players">+25 🤖</button>
+    <button data-act="reset" title="Clear every round">Reset</button>
+  </span>
+  <button data-act="key" class="viewer-only" title="Enter the teacher key">🔑 Take control</button>
+  <button data-act="full" title="Full screen (F)">⛶</button>
+  <span id="net" class="net" title="Connection"></span>
+</nav>
 
-  <!-- 7 · Play again ----------------------------------------------------- -->
-  <section class="slide" data-title="Round 2">
-    <h2 class="slide-h">Round 2: now that you know the theory…</h2>
-    <div class="again">
-      <div class="again-left">
-        <p class="big-q">Will the room march toward 0?</p>
-        <p>Economists call this <b>learning</b>. Students call it "the professor tricked us again." Each round, players see the last result and best-respond to it, so the target usually falls.</p>
-        <div class="teacher-only"><button class="btn big-btn" data-act="newround">Start a new round</button></div>
-      </div>
-      <div class="again-right">
-        <table class="history">
-          <thead><tr><th>Round</th><th>Players</th><th>Average</th><th>Target</th><th>Winning guess</th></tr></thead>
-          <tbody id="historyBody"><tr><td colspan="5" class="empty">Finished rounds show up here.</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+<div id="toast" role="status" aria-live="polite"></div>
 
-  <!-- 8 · For instructors ------------------------------------------------ -->
-  <section class="slide" data-title="For instructors">
-    <h2 class="slide-h">Steal this game <span class="h-note">Notes for fellow instructors</span></h2>
-    <div class="notes-grid">
-      <div class="note"><h3>Why it works</h3><p>Every student plays, and the room's own data become the lecture. Nobody can zone out of a contest they might win.</p></div>
-      <div class="note"><h3>What it teaches</h3><p>Best responses, dominated strategies, Nash equilibrium, bounded rationality, and why asset prices can drift from fundamentals.</p></div>
-      <div class="note"><h3>Variations</h3><p>Change ⅔ to ½ or 1.1. Play before and after the theory. Let a "trader" team coordinate. Compare sections.</p></div>
-      <div class="note"><h3>The setup</h3><p>A tiny web server, a QR code, and phones. Students play at <b>/play</b>; the teacher deck lives at <b>/teacher</b>.</p></div>
-    </div>
-    <p class="sign-off">Thanks, Western Michigan! Hail to the Victors, and go Broncos. 🐎</p>
-  </section>
-
-</main>
-
-<!-- Slide navigation + teacher dock -->
-<footer class="dock">
-  <div class="nav">
-    <button class="nav-btn" id="prev" aria-label="Previous slide">‹</button>
-    <div id="dots" class="dots"></div>
-    <button class="nav-btn" id="next" aria-label="Next slide">›</button>
-  </div>
-  <div class="teacher-only controls">
-    <button class="btn" data-act="open">Open</button>
-    <button class="btn gold" data-act="close">Close</button>
-    <button class="btn brown" data-act="reveal">Reveal</button>
-    <button class="btn ghost" data-act="bots" title="Add 25 robot students (handy for demos)">+25 🤖</button>
-    <button class="btn ghost" data-act="newround">New round</button>
-    <button class="btn danger" data-act="reset">Reset</button>
-  </div>
-  <div class="viewonly">View only. Add <code>?key=…</code> to the address to run the game.</div>
-</footer>
-
-<script src="marks.js"></script>
-<script src="teacher.js"></script>
+<script src="/common.js"></script>
+<script src="/teacher.js"></script>
 </body>
 </html>

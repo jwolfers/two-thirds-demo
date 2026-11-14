@@ -1,168 +1,269 @@
-// Student phone view: show the rules, take a guess, report how it went.
-(() => {
-  const $ = s => document.querySelector(s);
-  const fmt = x => (Math.round(x * 100) / 100).toLocaleString();
-  const store = {
-    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode: fine */ } }
-  };
+/* The 2/3 Game: phone page. */
+(function () {
+  'use strict';
 
-  let cid = store.get('tt-cid');
-  if (!cid) {
-    cid = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
-    store.set('tt-cid', cid);
-  }
-  $('#name').value = store.get('tt-name') || '';
+  const { BLOCK_M, FRAC, esc, fixed, num, store, makeId, confetti } = TT;
+  const $ = (s) => document.querySelector(s);
 
-  // ---------------------------------------------------------------- input
-  const guessEl = $('#guess'), slider = $('#slider');
+  document.querySelectorAll('[data-blockm]').forEach((el) => { el.innerHTML = BLOCK_M; });
+  document.querySelectorAll('[data-frac]').forEach((el) => { el.outerHTML = FRAC; });
 
-  function quip(v) {
-    if (!Number.isFinite(v)) return 'Slide, tap, or type.';
-    if (v < 0 || v > 100) return 'Nice try. 0 to 100, Hoss.';
-    if (v === 100) return '100? The only guess guaranteed to lose. We respect the chaos.';
-    if (v > 66.7) return 'Fun fact: above 66.7 can never win, even if everyone else picks 100.';
-    if (v >= 45 && v <= 55) return 'Right down the middle. Strong level-0 energy.';
-    if (v > 55) return 'Bold. Are you expecting a room full of 100s?';
-    if (v >= 28 && v < 45) return 'Classic level 1: you figure everyone else picks at random.';
-    if (v >= 18 && v < 28) return 'Level 2: you think they think. Very Ann Arbor of you.';
-    if (v >= 12 && v < 18) return 'Level 3: you think they think they think. Very Kalamazoo of you.';
-    if (v > 0 && v < 12) return 'Deep thinker. Or deep overthinker. Time will tell.';
-    if (v === 0) return 'Zero: the Nash equilibrium. Principled, lonely, often wrong.';
-    return 'Interesting choice. Very… specific.';
-  }
-  function setGuess(v, fromSlider) {
-    if (!fromSlider) slider.value = Number.isFinite(v) ? v : 50;
-    else guessEl.value = v;
-    $('#quip').textContent = quip(v);
-  }
-  guessEl.addEventListener('input', () => setGuess(guessEl.value === '' ? NaN : Number(guessEl.value)));
-  slider.addEventListener('input', () => setGuess(Number(slider.value), true));
-  document.querySelectorAll('.step').forEach(b => b.addEventListener('click', () => {
-    const cur = guessEl.value === '' ? 50 : Number(guessEl.value);
-    const v = Math.max(0, Math.min(100, Math.round(cur + Number(b.dataset.d))));
-    guessEl.value = v; setGuess(v);
-  }));
-
-  $('#submit').addEventListener('click', async () => {
-    const err = $('#err');
-    err.hidden = true;
-    const raw = guessEl.value.trim();
-    const g = Number(raw);
-    if (raw === '' || !Number.isFinite(g)) { showErr('Type a number first. Any number. Well, from 0 to 100.'); return; }
-    if (g < 0 || g > 100) { showErr('Nice try. 0 to 100, Hoss.'); return; }
-    const name = $('#name').value.trim();
-    store.set('tt-name', name);
-    $('#submit').disabled = true;
-    try {
-      const r = await fetch('api/guess', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cid, name, guess: g })
-      });
-      const data = await r.json();
-      if (!r.ok) showErr(data.error || 'Something went wrong. Try again?');
-      else apply(data);
-    } catch (e) {
-      showErr('Couldn\'t reach the server. Lecture-hall Wi-Fi strikes again. Try once more?');
-    }
-    $('#submit').disabled = false;
-  });
-  function showErr(m) { const e = $('#err'); e.textContent = m; e.hidden = false; }
-
-  // ---------------------------------------------------------------- state
-  let lastPhase = '', lastRound = 0, celebrated = '';
-
-  function levelLine(v) {
-    if (v > 50) return 'Your guess was above 50, a number that can only win if your classmates are very, very generous.';
-    if (v === 0) return 'You played the Nash equilibrium. Economists everywhere salute you, from a safe distance.';
-    const k = Math.log(v / 50) / Math.log(2 / 3);
-    return `Your guess is what a level-${Math.max(0, Math.round(k))} thinker would pick. Stick around: the professor is about to explain what that means.`;
+  // One ID per phone, kept across rounds.
+  let pid = store.get('tt_pid');
+  if (!pid || !/^[A-Za-z0-9_-]{8,64}$/.test(pid)) {
+    pid = makeId();
+    store.set('tt_pid', pid);
   }
 
-  function apply(s) {
-    $('#round').textContent = s.round;
-    if (s.round !== lastRound) {
-      // New round: clear the old guess.
-      guessEl.value = ''; slider.value = 50; $('#quip').textContent = quip(NaN);
-      $('#rules').open = true;
-    }
+  const guessEl = $('#guess');
+  const nameEl = $('#name');
+  const schoolEl = $('#school');
+  const submitBtn = $('#submitBtn');
+  nameEl.value = store.get('tt_name') || '';
+  schoolEl.value = store.get('tt_school') || '';
 
-    document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + s.phase));
+  let state = null;
+  let current = 'loading';
+  let editing = false;
+  let busy = false;
+  let failures = 0;
+  let celebrated = null;
+  let pollT = null;
 
-    if (s.phase === 'open') {
-      const locked = $('#locked');
-      if (s.me) {
-        locked.hidden = false;
-        $('#lockedVal').textContent = fmt(s.me.guess);
-        $('#submit').textContent = 'Change my guess';
-        $('#rules').open = false;
-      } else {
-        locked.hidden = true;
-        $('#submit').textContent = 'Lock it in';
-      }
-    }
-
-    if (s.phase === 'closed') {
-      $('#closedMsg').textContent = s.me
-        ? `You guessed ${fmt(s.me.guess)}. The professor is building suspense, as professors do. Eyes on the big screen.`
-        : 'Guesses are closed, and you didn\'t get one in. Watch anyway: there will be math, and possibly glory.';
-    }
-
-    if (s.phase === 'revealed' && s.results) {
-      const R = s.results;
-      $('#rMean').textContent = fmt(R.mean);
-      $('#rTarget').textContent = fmt(R.target);
-      const card = $('#v-revealed');
-      card.classList.remove('winner');
-      if (!s.me) {
-        $('#resEmoji').textContent = '🍿';
-        $('#resHead').textContent = 'You sat this one out';
-        $('#rMine').textContent = '–'; $('#rRank').textContent = '–';
-        $('#resMsg').textContent = 'Can\'t lose if you don\'t play. Can\'t win either. Catch the next round!';
-        $('#resLevel').textContent = '';
-      } else {
-        const { guess, rank } = s.me;
-        $('#rMine').textContent = fmt(guess);
-        $('#rRank').textContent = `${rank} / ${R.n}`;
-        let emoji, head, msg;
-        if (rank === 1) {
-          emoji = '🏆'; head = 'You won!';
-          msg = R.winners.length > 1
-            ? `You're one of ${R.winners.length} co-champions. Glory is non-rival, so you each get all of it.`
-            : 'Eternal glory is yours, valid in both Ann Arbor and Kalamazoo. Tell your grandkids.';
-          card.classList.add('winner');
-          const key = s.round + ':' + cid;
-          if (celebrated !== key) { celebrated = key; confetti(); }
-        } else if (guess === 100) {
-          emoji = '💯'; head = 'A noble sacrifice';
-          msg = 'You picked 100 and lost, but you raised everyone else\'s target. Truly a public good.';
-        } else if (rank <= 3) {
-          emoji = '🥈'; head = 'So close!'; msg = 'Podium finish. One more level of thinking (or one fewer) and it was yours.';
-        } else if (rank <= Math.ceil(R.n * 0.1)) {
-          emoji = '🔥'; head = 'Top 10%'; msg = 'Respectable. Very respectable. Put it on your résumé.';
-        } else if (rank <= Math.ceil(R.n / 2)) {
-          emoji = '👍'; head = 'Better than half the room'; msg = 'Solidly above average, which is more than most guesses can say.';
-        } else {
-          emoji = '🤷'; head = 'There\'s always round 2'; msg = Math.abs(guess - R.target) > 40
-            ? 'You were a bit far off. But hey, being wrong is how economists learn. Allegedly.'
-            : 'Not this time. The good news: now you know what everyone else did.';
-        }
-        $('#resEmoji').textContent = emoji;
-        $('#resHead').textContent = head;
-        $('#resMsg').textContent = msg;
-        $('#resLevel').textContent = levelLine(guess);
-      }
-    }
-
-    lastPhase = s.phase; lastRound = s.round;
+  const SCREENS = ['loading', 'waiting', 'form', 'locked', 'closed', 'results'];
+  function show(name) {
+    if (name === current) return;
+    SCREENS.forEach((s) => { $('#s-' + s).hidden = s !== name; });
+    current = name;
+    window.scrollTo(0, 0);
   }
+
+  /* ------------------------------------------------------------ polling */
 
   async function poll() {
     try {
-      const r = await fetch('api/state?cid=' + encodeURIComponent(cid), { cache: 'no-store' });
-      if (r.ok) apply(await r.json());
-    } catch (e) { /* try again shortly */ }
-    setTimeout(poll, 2000);
+      const res = await fetch('/api/state?pid=' + encodeURIComponent(pid), { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      setState(await res.json());
+      failures = 0;
+      $('#net').hidden = true;
+    } catch (e) {
+      failures += 1;
+      if (failures >= 2) $('#net').hidden = false;
+    } finally {
+      clearTimeout(pollT);
+      pollT = setTimeout(poll, document.hidden ? 6000 : 2000 + Math.random() * 600);
+    }
   }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      clearTimeout(pollT);
+      poll();
+    }
+  });
+
+  function setState(s) {
+    const prevRound = state && state.round;
+    state = s;
+    if (prevRound != null && prevRound !== s.round) {
+      editing = false;
+      guessEl.value = '';
+      setMsg('');
+    }
+    render();
+  }
+
+  /* ------------------------------------------------------------- render */
+
+  function render() {
+    const s = state;
+    if (!s) return show('loading');
+    const chip = $('#roundChip');
+    chip.hidden = false;
+    chip.textContent = 'Round ' + s.round;
+
+    if (s.status === 'waiting') {
+      $('#waitTitle').textContent = s.round > 1 ? `Round ${s.round} is warming up` : 'Warming up';
+      show('waiting');
+    } else if (s.status === 'open') {
+      if (s.me && !editing) {
+        renderLocked();
+        show('locked');
+      } else {
+        submitBtn.textContent = btnLabel();
+        show('form');
+      }
+    } else if (s.status === 'closed') {
+      editing = false;
+      renderClosed();
+      show('closed');
+    } else {
+      editing = false;
+      renderResults();
+      show('results');
+    }
+  }
+
+  function btnLabel() {
+    return state && state.me ? 'Update my guess' : 'Lock it in';
+  }
+
+  function renderLocked() {
+    const s = state;
+    $('#lockedGuess').textContent = num(s.me.guess);
+    $('#playingAs').innerHTML = `Playing as <b>${esc(s.me.name)}</b>${s.me.school ? ` (${esc(s.me.school)})` : ''}.`;
+    $('#countLocked').textContent = s.count;
+    $('#countLockedLabel').textContent = s.count === 1 ? 'guess' : 'guesses';
+  }
+
+  function renderClosed() {
+    const me = state.me;
+    $('#closedMine').innerHTML = me
+      ? `<div class="mine"><span class="muted small">Your guess</span><b>${num(me.guess)}</b></div>`
+      : "<p>You didn't get a guess in this round. The next one's yours.</p>";
+  }
+
+  function yours(you) {
+    return `<div class="yours">
+      <div><span>You guessed</span><b>${num(you.guess)}</b></div>
+      <div><span>Off by</span><b>${fixed(you.distance, 2)}</b></div>
+      <div><span>Rank</span><b>#${you.rank}</b></div>
+    </div>`;
+  }
+
+  function renderResults() {
+    const r = state.result;
+    if (!r) return;
+    $('#rAvg').textContent = fixed(r.avg, 2);
+    $('#rTarget').textContent = fixed(r.target, 2);
+    $('#rWin').textContent = r.winningGuesses.length ? r.winningGuesses.slice(0, 2).map((v) => num(v)).join(' & ') : '–';
+    $('#rN').textContent = r.n;
+
+    const card = $('#resultCard');
+    const you = r.you;
+    const key = `${state.round}:${r.n}:${you ? you.rank : '-'}`;
+    if (card.dataset.key === key) return;
+    card.dataset.key = key;
+
+    if (!r.n) {
+      card.className = 'card center';
+      card.innerHTML = '<div class="big-emoji">🫥</div><div class="result-title">No guesses</div><p>Zero guesses, zero points. Feels like home.</p>';
+      return;
+    }
+    if (!you) {
+      const who = r.winners.map(esc).join(', ') + (r.winnersTotal > r.winners.length ? ` and ${r.winnersTotal - r.winners.length} more` : '');
+      card.className = 'card center';
+      card.innerHTML = `<div class="big-emoji">👀</div><div class="result-title">You sat this one out</div>
+        <p>${r.winnersTotal > 1 ? 'Winners' : 'Winner'}: <b>${who}</b>. Next round, you're in.</p>`;
+      return;
+    }
+    if (you.won) {
+      card.className = 'card center won';
+      card.innerHTML = `<div class="big-emoji">🏆</div><div class="result-title">You won!</div>
+        <p>${r.winnersTotal > 1 ? `Hail to the Victors: you're one of ${r.winnersTotal} winners.` : "Hail to the Victor. Hold your phone up high: you've earned it."}</p>
+        ${yours(you)}
+        <p class="small">Michigan Athletics would like a word about your winning strategy.</p>`;
+      if (celebrated !== state.round) {
+        celebrated = state.round;
+        confetti();
+        if (navigator.vibrate) navigator.vibrate([60, 40, 140]);
+      }
+      return;
+    }
+    const close = you.rank <= 3;
+    const quip = you.guess > 200 / 3
+      ? "Anything above 66.7 can never win. You're the kind of optimist Michigan Athletics loves."
+      : you.guess < 1
+        ? 'You picked the Nash equilibrium. Right in theory, wrong in practice. Welcome to economics.'
+        : 'Look on the bright side: you still had a better week than the Michigan offense.';
+    card.className = 'card center';
+    card.innerHTML = `<div class="big-emoji">${close ? '🎯' : '🏈'}</div>
+      <div class="result-title">${close ? 'So close!' : 'Not this time'}</div>
+      <p>You finished <b>#${you.rank}</b> of ${r.n}.</p>
+      ${yours(you)}
+      <p class="small muted">${quip}</p>`;
+  }
+
+  /* --------------------------------------------------------------- form */
+
+  function parse(v) {
+    const s = String(v).trim().replace(',', '.');
+    if (!s || !/^\d{0,3}(\.\d*)?$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  }
+
+  function setMsg(text, ok) {
+    const m = $('#formMsg');
+    m.textContent = text;
+    m.classList.toggle('ok', !!ok);
+  }
+
+  guessEl.addEventListener('input', () => {
+    const clean = guessEl.value.replace(/[^0-9.,]/g, '');
+    if (clean !== guessEl.value) guessEl.value = clean;
+    guessEl.classList.toggle('bad', clean !== '' && parse(clean) === null);
+    setMsg(clean !== '' && parse(clean) === null ? 'Between 0 and 100, please.' : '');
+  });
+
+  $('#form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    const n = parse(guessEl.value);
+    if (n === null) {
+      setMsg('Pick a number from 0 to 100.');
+      guessEl.classList.add('bad');
+      guessEl.focus();
+      return;
+    }
+    const name = nameEl.value.trim();
+    const school = schoolEl.value.trim();
+    store.set('tt_name', name);
+    store.set('tt_school', school);
+
+    busy = true;
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Locking it in…';
+    try {
+      const res = await fetch('/api/guess', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pid, guess: n, name, school }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (err) { /* not JSON */ }
+      if (!res.ok) {
+        setMsg(data.error || 'Something went wrong. Try again.');
+        if (res.status === 409) poll();
+        return;
+      }
+      editing = false;
+      setMsg('');
+      guessEl.blur();
+      state = { ...state, me: data.me, count: data.count };
+      render();
+      const big = $('#lockedGuess');
+      big.classList.remove('pop');
+      void big.offsetWidth;
+      big.classList.add('pop');
+      if (navigator.vibrate) navigator.vibrate(30);
+    } catch (err) {
+      setMsg("Fumble! Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      busy = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = btnLabel();
+    }
+  });
+
+  $('#changeBtn').addEventListener('click', () => {
+    editing = true;
+    if (state && state.me) guessEl.value = num(state.me.guess);
+    render();
+    guessEl.focus();
+    guessEl.select();
+  });
+
   poll();
 })();
