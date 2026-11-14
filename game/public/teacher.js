@@ -23,7 +23,7 @@
   const stage = $('stage');
   function fit() {
     const s = Math.min(innerWidth / 1600, innerHeight / 900);
-    stage.style.transform = `scale(${s})`;
+    stage.style.transform = `translate(-50%, -50%) scale(${s})`;
   }
   addEventListener('resize', fit);
   fit();
